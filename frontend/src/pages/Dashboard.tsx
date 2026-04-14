@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { type ListBillsResponse, type VoucherStatusEntry, checkVouchers, listBills } from '../api/bills'
+import { type ListBillsResponse, type VoucherStatusEntry, checkVouchers, downloadBillPdf, listBills } from '../api/bills'
 import { generateVoucherPdf } from '../components/VoucherPdf'
 import { type Service, listServices } from '../api/services'
+import { hasDjangoSession } from '../auth'
 import { Navbar } from '../components/Navbar'
 
 const PAGE_SIZE = 20
@@ -39,9 +40,21 @@ export function Dashboard() {
   const [voucherStatuses, setVoucherStatuses] = useState<Map<number, VoucherStatusEntry[]>>(new Map())
   const [checkingId, setCheckingId] = useState<number | null>(null)
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
+  const [invoiceId, setInvoiceId] = useState<number | null>(null)
 
   const toggleExpand = (id: number) =>
     setExpandedId(prev => (prev === id ? null : id))
+
+  const handleInvoice = async (billId: number, billNumber: string) => {
+    setInvoiceId(billId)
+    try {
+      await downloadBillPdf(billId, billNumber)
+    } catch {
+      // silently ignore
+    } finally {
+      setInvoiceId(null)
+    }
+  }
 
   const handleDownloadPdf = async (billId: number, billNumber: string, vouchers: VoucherStatusEntry[]) => {
     setDownloadingId(billId)
@@ -174,7 +187,23 @@ export function Dashboard() {
                       <td>{bill.date}</td>
                       <td className="text-base-content/70">{serviceName}</td>
                       <td className="text-right">{bill.amount.toFixed(2)} €</td>
-                      <td>{unmanaged ? null : <StatusBadge isPaid={bill.is_paid} date={bill.date} />}</td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          {hasDjangoSession() && (
+                            <button
+                              className="btn btn-xs btn-ghost btn-circle"
+                              disabled={invoiceId === bill.id}
+                              title="Télécharger la facture"
+                              onClick={e => { e.stopPropagation(); handleInvoice(bill.id, bill.number) }}
+                            >
+                              {invoiceId === bill.id
+                                ? <span className="loading loading-spinner loading-xs" />
+                                : '⎙'}
+                            </button>
+                          )}
+                          {!unmanaged && <StatusBadge isPaid={bill.is_paid} date={bill.date} />}
+                        </div>
+                      </td>
                     </tr>
 
                     {expanded && bill.kind === 'Managed' && (

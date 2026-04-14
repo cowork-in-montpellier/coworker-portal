@@ -19,6 +19,7 @@ pub fn router() -> OpenApiRouter<AppState> {
 pub struct CurrentUser {
     pub id: i32,
     pub first_name: String,
+    pub django_session: Option<String>,
 }
 
 impl FromRequestParts<AppState> for CurrentUser {
@@ -43,6 +44,7 @@ impl FromRequestParts<AppState> for CurrentUser {
         Ok(CurrentUser {
             id: claims.sub,
             first_name: claims.first_name,
+            django_session: claims.django_session,
         })
     }
 }

@@ -77,6 +77,20 @@ export async function checkVouchers(billId: number): Promise<VoucherStatusEntry[
   return VoucherCheckResponseSchema.parse(raw).data
 }
 
+export async function downloadBillPdf(billId: number, billNumber: string): Promise<void> {
+  const res = await fetch(`/api/bills/${billId}/pdf`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
+  })
+  if (!res.ok) throw new Error(`Erreur ${res.status}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${billNumber}.pdf`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 
 export async function listBills(query: BillsQuery = {}): Promise<ListBillsResponse> {
   const params = new URLSearchParams()

@@ -7,6 +7,8 @@ pub struct Config {
     pub jwt_expiry_hours: u64,
     pub listen_addr: String,
     pub issuer_address: String,
+    pub django_base_url: String,
+    pub django_accept_invalid_certs: bool,
     pub unify: UnifyConfig,
 }
 
@@ -40,6 +42,10 @@ impl Config {
             listen_addr: std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into()),
             issuer_address: std::env::var("BILL_ISSUER_ADDRESS")
                 .unwrap_or_else(|_| "Coworking Space\n1 rue de la Paix\n75001 Paris".into()),
+            django_base_url: std::env::var("DJANGO_BASE_URL")
+                .unwrap_or_else(|_| "http://localhost:8000".into()),
+            django_accept_invalid_certs: std::env::var("DJANGO_ACCEPT_INVALID_CERTS").as_deref()
+                == Ok("true"),
             unify: UnifyConfig {
                 mode: if std::env::var("UNIFY_MOCK").as_deref() == Ok("true") {
                     UnifyMode::Mock

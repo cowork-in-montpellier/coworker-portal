@@ -1,6 +1,9 @@
 use axum::{
     Json,
+    body::Body,
     extract::{Path, State},
+    http::header,
+    response::Response,
 };
 use serde::Serialize;
 use sqlx::FromRow;
@@ -102,4 +105,81 @@ pub async fn check_vouchers(
     }
 
     Ok(Json(VoucherCheckResponse { data }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/bills/{id}/pdf",
+    tag = "Vouchers",
+    security(("bearer_auth" = [])),
+    params(
+        ("id" = i32, Path, description = "Bill ID"),
+    ),
+    responses(
+        (status = 200, description = "Invoice PDF from Django"),
+        (status = 401, description = "Unauthorized or no Django session"),
+        (status = 404, description = "Bill not found or not owned by user"),
+    )
+)]
+pub async fn bill_pdf(
+    State(state): State<AppState>,
+    user: CurrentUser,
+    Path(bill_id): Path<i32>,
+) -> Result<Response, AppError> {
+    // Verify bill ownership
+    let exists: Option<i32> = sqlx::query_scalar(
+        "SELECT id FROM billjobs_bill WHERE id = $1 AND user_id = $2",
+    )
+    .bind(bill_id)
+    .bind(user.id)
+    .fetch_optional(&state.db)
+    .await?;
+
+    if exists.is_none() {
+        return Err(AppError::NotFound);
+    }
+
+    let session = user
+        .django_session
+        .ok_or_else(|| AppError::Unify("No Django session in token — please log in again".into()))?;
+
+    let url = format!(
+        "{}/billjobs/generate_pdf/{}",
+        state.config.django_base_url, bill_id
+    );
+
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(state.config.django_accept_invalid_certs)
+        .build()
+        .map_err(|e| AppError::Unify(e.to_string()))?;
+
+    let res = client
+        .get(&url)
+        .header("Cookie", format!("sessionid={}", session))
+        .send()
+        .await
+        .map_err(|e| AppError::Unify(e.to_string()))?;
+
+    if !res.status().is_success() {
+        return Err(AppError::Unify(format!(
+            "Django returned {}",
+            res.status()
+        )));
+    }
+
+    let content_disposition = res
+        .headers()
+        .get(header::CONTENT_DISPOSITION)
+        .cloned();
+
+    let bytes = res.bytes().await.map_err(|e| AppError::Unify(e.to_string()))?;
+
+    let mut builder = Response::builder()
+        .header(header::CONTENT_TYPE, "application/pdf");
+
+    if let Some(cd) = content_disposition {
+        builder = builder.header(header::CONTENT_DISPOSITION, cd);
+    }
+
+    Ok(builder.body(Body::from(bytes)).unwrap())
 }
