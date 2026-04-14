@@ -3,6 +3,7 @@ use axum::{Json, response::Html, routing::get};
 use axum_swagger_ui::swagger_ui;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::services::{ServeDir, ServeFile};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
@@ -21,6 +22,9 @@ pub struct AppState {
     pub jwt: Arc<auth::jwt::JwtService>,
     pub unify: Arc<dyn unify::UnifyClient>,
     pub config: Arc<config::Config>,
+    /// Cached superuser Django session for guest bill PDF proxy.
+    /// Acquired at startup; refreshed on 403 responses.
+    pub superuser_session: Arc<RwLock<Option<String>>>,
 }
 
 #[tokio::main]
@@ -53,6 +57,16 @@ async fn main() -> Result<()> {
         }
     };
 
+    let superuser_session = auth::routes::acquire_django_session(
+        &config.django_base_url,
+        config.django_accept_invalid_certs,
+        &config.django_superuser_username,
+        &config.django_superuser_password,
+    )
+    .await
+    .inspect_err(|e| tracing::warn!(error = %e, "Superuser Django session acquisition failed — guest PDF will be unavailable"))
+    .ok();
+
     let state = AppState {
         db,
         jwt: Arc::new(auth::jwt::JwtService::new(
@@ -60,6 +74,7 @@ async fn main() -> Result<()> {
             config.jwt_expiry_hours,
         )),
         unify: unify_client,
+        superuser_session: Arc::new(RwLock::new(superuser_session)),
         config: Arc::new(config.clone()),
     };
 

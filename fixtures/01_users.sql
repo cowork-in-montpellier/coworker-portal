@@ -7,4 +7,5 @@ INSERT INTO auth_user
 VALUES
   ('pbkdf2_sha256$600000$fixturesalt00$AoP3VRADbzhtBaPfrkzkgT+pUN0InOUJJAMJN85iyuM=', NULL, true, 'admin', 'Admin', 'User', 'admin@coworking.local', true, true, NOW()),
   ('pbkdf2_sha256$600000$fixturesalt01$QvRv2BZovxQ/W45Y9u2/4pous/SBRda2leeJKVoI14g=', NULL, false, 'alice', 'Alice', 'Martin', 'alice@coworking.local', true, true, NOW()),
-  ('pbkdf2_sha256$600000$fixturesalt02$6x95vqRYk9pNdA9AE+MlULBBY+nRU0f+uuq62uzb+Ac=', NULL, false, 'bob', 'Bob', 'Dupont', 'bob@coworking.local', true, true, NOW());
+  ('pbkdf2_sha256$600000$fixturesalt02$6x95vqRYk9pNdA9AE+MlULBBY+nRU0f+uuq62uzb+Ac=', NULL, false, 'bob', 'Bob', 'Dupont', 'bob@coworking.local', true, true, NOW()),
+  ('pbkdf2_sha256$600000$fixturesalt03$AoP3VRADbzhtBaPfrkzkgT+pUN0InOUJJAMJN85iyuM=', NULL, true, 'guest', 'Guest', 'GUEST', 'guest@coworking.local', true, true, NOW());

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 
 const loginSchema = z.object({
@@ -140,6 +140,10 @@ export function Login() {
                 }
               </button>
             </form>
+
+            <Link to="/buy" className="btn btn-ghost btn-sm hidden sm:flex">
+              Acheter sans compte
+            </Link>
 
           </div>
         </div>

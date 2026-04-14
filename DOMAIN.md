@@ -309,5 +309,49 @@ As a logged user I can get the live status of vouchers for a bill by querying Un
 
 Acceptance:
  - Status is fetched live from Unify using the stored `unifyId` for each voucher
- - No side effects — local `Voucher.status` in DB is not updated by this call
+ - Local `Voucher.status` is updated in DB after the check
  - Returns current Unify status mapped to `VoucherStatus` for each voucher of the bill
+
+### Guest purchase
+A visitor can buy a service without a coworking account via a public `/buy` route.
+
+**Flow:**
+1. Visitor accesses `/buy` (no auth required)
+2. Selects a service from the guest-available service list
+3. Optionally provides billing name and address
+4. Submits → bill created in backend as the configured generic guest user
+5. Redirected to `/buy/summary/:guestToken` showing the bill, vouchers, and download buttons
+
+**Key design decisions:**
+- Services must be explicitly opted-in with `is_guest_available = true`
+- Bill is owned by `GUEST_USER_ID` (a generic Django `auth_user` record)
+- A `guest_token` UUID is generated at creation and stored on the bill row. It is the only access credential for subsequent guest operations — sequential integer bill IDs are never exposed publicly
+- Customer name: if provided in the form, it is prepended as the first line of `billing_address` (e.g. `"François Dupont\n12 rue de la Paix\n75001 Paris"`). Django's `generate_pdf` view renders `billing_address` verbatim in the address box, so the name appears in the invoice despite always using the generic user account
+- PDF proxy for guest bills uses a shared Django superuser session (`DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD`), acquired at server startup and cached in `AppState`. On 403, the session is re-acquired once and retried
+
+**Service schema addition:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `is_guest_available` | boolean | default `false`; must be set to `true` to appear in guest service list |
+
+**`billjobs_bill` schema addition:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `guest_token` | uuid | null for authenticated bills; set to a random UUID for guest bills |
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GUEST_USER_ID` | `1` | `auth_user.id` of the generic guest account |
+| `DJANGO_SUPERUSER_USERNAME` | _(empty)_ | Django superuser for guest PDF proxy |
+| `DJANGO_SUPERUSER_PASSWORD` | _(empty)_ | Django superuser for guest PDF proxy |
+
+**Guest Summary Page (`/buy/summary/:guestToken`):**
+- Bill number, date, service name, amount
+- Voucher cards with status (seeded from creation response)
+- `↻` voucher status refresh button
+- `⎙` invoice PDF download (via superuser session proxy)
+- `⎙` voucher PDF download (visible only when at least one voucher is Valid)

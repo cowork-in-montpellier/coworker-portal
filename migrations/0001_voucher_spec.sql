@@ -7,5 +7,6 @@ CREATE TABLE service (
     amount              INT,        -- null for Monthly; number of vouchers for Book
     duration            INT,        -- null for Monthly; hours per voucher for Book
     external_service_id INT NOT NULL,  -- references billjobs_service.id (external)
-    is_available        BOOLEAN NOT NULL DEFAULT true
+    is_available        BOOLEAN NOT NULL DEFAULT true,
+    is_guest_available  BOOLEAN NOT NULL DEFAULT false
 );

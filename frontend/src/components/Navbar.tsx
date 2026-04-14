@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { getTokenPayload, logout } from '../auth'
 
 export function Navbar() {
@@ -14,6 +15,9 @@ export function Navbar() {
         <span className="text-lg font-bold text-primary">Coworking</span>
       </div>
       <div className="navbar-end gap-3">
+        <Link to="/buy" className="btn btn-ghost btn-sm hidden sm:flex">
+          Acheter sans compte
+        </Link>
         {user && (
           <span className="text-sm text-base-content/60 hidden sm:block">
             {user.first_name}

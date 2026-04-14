@@ -71,7 +71,7 @@ pub async fn login(
 }
 
 /// Authenticates against Django's login page and returns the `sessionid` cookie value.
-async fn acquire_django_session(
+pub async fn acquire_django_session(
     base_url: &str,
     accept_invalid_certs: bool,
     username: &str,

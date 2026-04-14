@@ -9,6 +9,9 @@ pub struct Config {
     pub issuer_address: String,
     pub django_base_url: String,
     pub django_accept_invalid_certs: bool,
+    pub guest_user_id: i32,
+    pub django_superuser_username: String,
+    pub django_superuser_password: String,
     pub unify: UnifyConfig,
 }
 
@@ -46,6 +49,14 @@ impl Config {
                 .unwrap_or_else(|_| "http://localhost:8000".into()),
             django_accept_invalid_certs: std::env::var("DJANGO_ACCEPT_INVALID_CERTS").as_deref()
                 == Ok("true"),
+            guest_user_id: std::env::var("GUEST_USER_ID")
+                .unwrap_or_else(|_| "1".into())
+                .parse()
+                .context("GUEST_USER_ID must be a number")?,
+            django_superuser_username: std::env::var("DJANGO_SUPERUSER_USERNAME")
+                .unwrap_or_default(),
+            django_superuser_password: std::env::var("DJANGO_SUPERUSER_PASSWORD")
+                .unwrap_or_default(),
             unify: UnifyConfig {
                 mode: if std::env::var("UNIFY_MOCK").as_deref() == Ok("true") {
                     UnifyMode::Mock
