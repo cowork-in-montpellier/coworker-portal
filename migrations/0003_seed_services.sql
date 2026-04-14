@@ -21,13 +21,13 @@ FROM billjobs_service s WHERE s.reference = 'PT002'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO service (name, description, price, kind, amount, duration, external_service_id, is_available)
-SELECT 'Carnet 10 heures', 'Carnet de 10 voucher de 10 hours',
+SELECT 'Carnet Journée', 'Carnet de 10 voucher de 10 hours',
        140.00, 'Book', 10, 10, s.id, true
 FROM billjobs_service s WHERE s.reference = 'TD001'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO service (name, description, price, kind, amount, duration, external_service_id, is_available)
-SELECT 'Carnet 5 heures', 'Carnet de 20 voucher de 5 hour',
+SELECT 'Carnet Demi-journée', 'Carnet de 20 voucher de 5 hour',
        140.00, 'Book', 20, 5, s.id, true
 FROM billjobs_service s WHERE s.reference = 'TD001'
 ON CONFLICT DO NOTHING;
