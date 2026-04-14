@@ -5,7 +5,7 @@ import { type Service, type VoucherSpec, listServices } from '../api/services'
 import { Navbar } from '../components/Navbar'
 
 function voucherSpecLabel(spec: VoucherSpec): string {
-  if (spec.kind === 'Monthly') return '1 voucher — valid until end of month'
+  if (spec.kind === 'Monthly') return `1 voucher — valable jusqu'à fin de mois`
   return `${spec.amount} voucher${spec.amount > 1 ? 's' : ''} × ${spec.duration}h`
 }
 
@@ -65,7 +65,7 @@ export function CreateBill() {
         setServices(s)
         if (s.length > 0) setSelectedId(s[0].id)
       })
-      .catch(() => setError('Could not load services.'))
+      .catch(() => setError('Impossible de charger les services.'))
       .finally(() => setLoadingServices(false))
   }, [])
 
@@ -79,7 +79,7 @@ export function CreateBill() {
       await createBill(selectedId)
       navigate('/dashboard')
     } catch {
-      setError('Failed to create bill. Please try again.')
+      setError('Échec de la création de la facture. Veuillez réessayer.')
     } finally {
       setSubmitting(false)
     }
@@ -99,7 +99,7 @@ export function CreateBill() {
           >
             ←
           </button>
-          <h2 className="text-xl font-bold">New Bill</h2>
+          <h2 className="text-xl font-bold">Nouvelle facture</h2>
         </div>
 
         {error && (
@@ -130,7 +130,7 @@ export function CreateBill() {
             <div className="card bg-base-100 shadow-sm">
               <div className="card-body p-4 flex-row items-center justify-between">
                 <div>
-                  <p className="text-sm text-base-content/50">Total</p>
+                  <p className="text-sm text-base-content/50">Total TTC</p>
                   <p className="text-2xl font-bold text-primary">
                     {selected ? `${selected.price.toFixed(2)} €` : '—'}
                   </p>
@@ -142,7 +142,7 @@ export function CreateBill() {
                 >
                   {submitting
                     ? <span className="loading loading-spinner loading-sm" />
-                    : 'Confirm & create'
+                    : 'Confirmer & créer'
                   }
                 </button>
               </div>

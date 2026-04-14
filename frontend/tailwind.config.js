@@ -8,6 +8,6 @@ export default {
   daisyui: {
     // Try swapping to: 'nord', 'corporate', 'dim', 'sunset', 'dracula'
     themes: ['corporate', 'nord', 'dim'],
-    defaultTheme: 'corporate',
+    defaultTheme: 'nord',
   },
 }

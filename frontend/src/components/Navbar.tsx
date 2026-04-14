@@ -1,13 +1,11 @@
-import { useNavigate } from 'react-router-dom'
 import { getTokenPayload, logout } from '../auth'
 
 export function Navbar() {
-  const navigate = useNavigate()
   const user = getTokenPayload()
 
   const handleLogout = () => {
     logout()
-    navigate('/login')
+    window.location.href = '/login'
   }
 
   return (
@@ -22,7 +20,7 @@ export function Navbar() {
           </span>
         )}
         <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
-          Sign out
+          Se déconnecter
         </button>
       </div>
     </div>

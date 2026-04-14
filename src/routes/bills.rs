@@ -5,7 +5,7 @@ use axum::{
 use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use utoipa::{IntoParams, ToSchema, openapi::info};
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     AppState,
@@ -269,7 +269,7 @@ pub async fn create_bill(
     .await?
     .unwrap_or_default();
 
-    tracing::info!(numer= &number, "Create bills");
+    tracing::info!(number= &number, "Create bills");
 
     // 6. Insert bill into billjobs_bill
     let bill_id: i32 = sqlx::query_scalar(
@@ -289,7 +289,7 @@ pub async fn create_bill(
     .fetch_one(&mut *tx)
     .await?;
 
-    tracing::info!(numer= &number, "Create bills line");
+    tracing::info!(number= &number, "Create bills line");
 
     // 7. Insert bill line (persistence detail, quantity=1)
     sqlx::query(

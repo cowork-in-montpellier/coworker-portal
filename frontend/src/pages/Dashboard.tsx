@@ -8,14 +8,14 @@ import { Navbar } from '../components/Navbar'
 const PAGE_SIZE = 20
 
 function StatusBadge({ isPaid, date }: { isPaid: boolean; date: string }) {
-  if (isPaid) return <span className="badge badge-success badge-sm">Paid</span>
+  if (isPaid) return <span className="badge badge-success badge-sm">Payée</span>
 
   const billDate = new Date(date)
   const twoMonthsAgo = new Date()
   twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2)
   if (billDate > twoMonthsAgo) return null
 
-  return <span className="badge badge-warning badge-sm">Unpaid</span>
+  return <span className="badge badge-warning badge-sm">Impayée</span>
 }
 
 function SkeletonRow() {
@@ -93,7 +93,7 @@ export function Dashboard() {
           return next
         })
       })
-      .catch(e => setError(e instanceof Error ? e.message : 'Failed to load bills'))
+      .catch(e => setError(e instanceof Error ? e.message : 'Impossible de charger les factures'))
       .finally(() => setLoading(false))
   }, [page])
 
@@ -106,10 +106,10 @@ export function Dashboard() {
       <main className="flex-1 p-4 md:p-8 max-w-6xl mx-auto w-full">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-xl font-bold">My Bills</h2>
+            <h2 className="text-xl font-bold">Mes factures</h2>
             {result && (
               <p className="text-sm text-base-content/50 mt-0.5">
-                {result.total} bill{result.total !== 1 ? 's' : ''} total
+                {result.total} facture{result.total !== 1 ? 's' : ''} au total
               </p>
             )}
           </div>
@@ -117,7 +117,7 @@ export function Dashboard() {
             className="btn btn-primary btn-sm"
             onClick={() => navigate('/bills/new')}
           >
-            + New Bill
+            + Nouvelle facture
           </button>
         </div>
 
@@ -132,11 +132,11 @@ export function Dashboard() {
             <thead>
               <tr>
                 <th />
-                <th>Number</th>
+                <th>Numéro</th>
                 <th>Date</th>
                 <th>Service</th>
-                <th className="text-right">Amount</th>
-                <th>Status</th>
+                <th className="text-right">Montant</th>
+                <th>Statut</th>
               </tr>
             </thead>
             <tbody>
@@ -147,7 +147,7 @@ export function Dashboard() {
               {!loading && result?.data.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center text-base-content/40 py-12">
-                    No bills found.
+                    Aucune facture trouvée.
                   </td>
                 </tr>
               )}
@@ -187,7 +187,7 @@ export function Dashboard() {
                               className="btn btn-xs btn-ghost btn-circle"
                               disabled={checkingId === bill.id}
                               onClick={() => handleCheckVouchers(bill.id)}
-                              title="Check status"
+                              title="Vérifier le statut"
                             >
                               {checkingId === bill.id
                                 ? <span className="loading loading-spinner loading-xs" />
@@ -198,7 +198,7 @@ export function Dashboard() {
                                 className="btn btn-xs btn-ghost btn-circle"
                                 disabled={downloadingId === bill.id}
                                 onClick={() => handleDownloadPdf(bill.id, bill.number, voucherStatuses.get(bill.id) ?? [])}
-                                title="Download PDF"
+                                title="Télécharger le PDF"
                               >
                                 {downloadingId === bill.id
                                   ? <span className="loading loading-spinner loading-xs" />
@@ -230,7 +230,9 @@ export function Dashboard() {
                                           status === 'Expired' ? 'badge-error' :
                                           'badge-ghost'
                                         }`}>
-                                          {status}
+                                          {status === 'Valid' ? 'Valide' :
+                                           status === 'Used' ? 'Utilisé' :
+                                           status === 'Expired' ? 'Expiré' : 'Inconnu'}
                                         </span>
                                       )}
                                     </div>

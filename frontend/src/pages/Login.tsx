@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 
 const loginSchema = z.object({
-  username: z.string().min(1, 'Username is required'),
-  password: z.string().min(1, 'Password is required'),
+  username: z.string().min(1, "Nom d'utilisateur requis"),
+  password: z.string().min(1, 'Mot de passe requis'),
 })
 
 type LoginForm = z.infer<typeof loginSchema>
@@ -43,11 +43,11 @@ export function Login() {
       })
 
       if (res.status === 401) {
-        setApiError('Invalid username or password.')
+        setApiError('Identifiant ou mot de passe incorrect.')
         return
       }
       if (!res.ok) {
-        setApiError('An unexpected error occurred. Please try again.')
+        setApiError('Une erreur inattendue est survenue. Veuillez réessayer.')
         return
       }
 
@@ -55,7 +55,7 @@ export function Login() {
       localStorage.setItem('token', token)
       navigate('/dashboard')
     } catch {
-      setApiError('Could not reach the server. Please try again.')
+      setApiError('Impossible de contacter le serveur. Veuillez réessayer.')
     } finally {
       setLoading(false)
     }
@@ -71,7 +71,7 @@ export function Login() {
             C
           </div>
           <h1 className="text-2xl font-bold text-base-content">Coworking</h1>
-          <p className="text-base-content/50 text-sm mt-1">Member portal</p>
+          <p className="text-base-content/50 text-sm mt-1">Espace membres</p>
         </div>
 
         {/* Card */}
@@ -90,7 +90,7 @@ export function Login() {
             <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
               <div className="form-control">
                 <label className="label pb-1" htmlFor="username">
-                  <span className="label-text font-medium">Username</span>
+                  <span className="label-text font-medium">Identifiant</span>
                 </label>
                 <input
                   id="username"
@@ -111,7 +111,7 @@ export function Login() {
 
               <div className="form-control">
                 <label className="label pb-1" htmlFor="password">
-                  <span className="label-text font-medium">Password</span>
+                  <span className="label-text font-medium">Mot de passe</span>
                 </label>
                 <input
                   id="password"
@@ -136,7 +136,7 @@ export function Login() {
               >
                 {loading
                   ? <span className="loading loading-spinner loading-sm" />
-                  : 'Sign in'
+                  : 'Se connecter'
                 }
               </button>
             </form>

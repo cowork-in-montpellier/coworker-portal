@@ -71,11 +71,11 @@ const styles = StyleSheet.create({
   },
 })
 
-const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
-  Valid:   { bg: '#dcfce7', text: '#166534' },
-  Used:    { bg: '#f3f4f6', text: '#374151' },
-  Expired: { bg: '#fee2e2', text: '#991b1b' },
-  Unknown: { bg: '#f3f4f6', text: '#374151' },
+const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
+  Valid:   { bg: '#dcfce7', text: '#166534', label: 'Valide' },
+  Used:    { bg: '#f3f4f6', text: '#374151', label: 'Utilisé' },
+  Expired: { bg: '#fee2e2', text: '#991b1b', label: 'Expiré' },
+  Unknown: { bg: '#f3f4f6', text: '#374151', label: 'Inconnu' },
 }
 
 function VoucherCard({ voucher, index }: { voucher: VoucherStatusEntry; index: number }) {
@@ -88,7 +88,7 @@ function VoucherCard({ voucher, index }: { voucher: VoucherStatusEntry; index: n
       <Text style={isExpired ? styles.cardCodeStruck : styles.cardCode}>{voucher.code}</Text>
       <Text style={styles.cardDuration}>{voucher.duration}h</Text>
       <View style={[styles.badge, { backgroundColor: colors.bg }]}>
-        <Text style={[styles.badgeText, { color: colors.text }]}>{voucher.status}</Text>
+        <Text style={[styles.badgeText, { color: colors.text }]}>{colors.label}</Text>
       </View>
     </View>
   )
@@ -104,7 +104,7 @@ function VoucherDocument({
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.title}>Vouchers — Bill {billNumber}</Text>
+        <Text style={styles.title}>Vouchers — Facture {billNumber}</Text>
         <Text style={styles.subtitle}>{vouchers.length} voucher{vouchers.length !== 1 ? 's' : ''}</Text>
         <View style={styles.grid}>
           {vouchers.map((v, i) => (
