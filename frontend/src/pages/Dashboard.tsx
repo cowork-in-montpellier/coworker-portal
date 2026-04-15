@@ -9,14 +9,14 @@ import { useStatus } from '../hooks/useStatus'
 const PAGE_SIZE = 20
 
 function StatusBadge({ isPaid, date }: { isPaid: boolean; date: string }) {
-  if (isPaid) return <span className="badge badge-success badge-sm">Payée</span>
+  if (isPaid) return <span className="badge badge-success badge-sm">Paiement confirmé</span>
 
   const billDate = new Date(date)
   const twoMonthsAgo = new Date()
   twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2)
   if (billDate > twoMonthsAgo) return null
 
-  return <span className="badge badge-warning badge-sm">Impayée</span>
+  return <span className="badge badge-warning badge-sm">Retard de paiement ou non validé</span>
 }
 
 function SkeletonRow() {

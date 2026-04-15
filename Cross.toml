@@ -1,0 +1,8 @@
+[build.env]
+passthrough = ["SKIP_FRONTEND_BUILD"]
+
+[target.aarch64-unknown-linux-gnu.env]
+passthrough = ["SKIP_FRONTEND_BUILD"]
+
+[target.aarch64-unknown-linux-musl.env]
+passthrough = ["SKIP_FRONTEND_BUILD"]
