@@ -36,6 +36,10 @@ async fn main() -> Result<()> {
         )
         .init();
 
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     let config = config::Config::from_env()?;
 
     let db = PgPoolOptions::new()
@@ -89,8 +93,21 @@ async fn main() -> Result<()> {
         .fallback_service(ServeDir::new("public").fallback(ServeFile::new("public/index.html")))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
-    tracing::info!("Listening on http://{}", config.listen_addr);
-    axum::serve(listener, app).await?;
+    let addr: std::net::SocketAddr = config.listen_addr.parse()?;
+
+    match (config.tls_cert_path.clone(), config.tls_key_path.clone()) {
+        (Some(cert), Some(key)) => {
+            let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key).await?;
+            tracing::info!("Listening on https://{}", addr);
+            axum_server::bind_rustls(addr, tls_config)
+                .serve(app.into_make_service())
+                .await?;
+        }
+        _ => {
+            let listener = tokio::net::TcpListener::bind(addr).await?;
+            tracing::info!("Listening on http://{}", addr);
+            axum::serve(listener, app).await?;
+        }
+    }
     Ok(())
 }

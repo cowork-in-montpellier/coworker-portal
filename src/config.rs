@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct Config {
@@ -6,6 +7,8 @@ pub struct Config {
     pub jwt_secret: String,
     pub jwt_expiry_hours: u64,
     pub listen_addr: String,
+    pub tls_cert_path: Option<PathBuf>,
+    pub tls_key_path: Option<PathBuf>,
     pub issuer_address: String,
     pub django_base_url: String,
     pub django_accept_invalid_certs: bool,
@@ -43,6 +46,8 @@ impl Config {
                 .parse()
                 .context("JWT_EXPIRY_HOURS must be a number")?,
             listen_addr: std::env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".into()),
+            tls_cert_path: std::env::var("TLS_CERT_PATH").ok().map(PathBuf::from),
+            tls_key_path: std::env::var("TLS_KEY_PATH").ok().map(PathBuf::from),
             issuer_address: std::env::var("BILL_ISSUER_ADDRESS")
                 .unwrap_or_else(|_| "Coworking Space\n1 rue de la Paix\n75001 Paris".into()),
             django_base_url: std::env::var("DJANGO_BASE_URL")
