@@ -1,0 +1,19 @@
+[Unit]
+Description=Coworker Portal
+After=network.target
+
+[Service]
+Type=simple
+# Running as root to allow reading TLS certificate and key files that are only
+# accessible by root (e.g. managed by certbot). The proper fix is to either add
+# a dedicated service user to the cert group, or use a post-renewal hook to copy
+# the files with appropriate permissions — but that requires coordinating with the
+# cert renewal setup which is out of scope for now.
+WorkingDirectory=/opt/coworker-portal
+EnvironmentFile=/etc/coworker-portal/env
+ExecStart=/opt/coworker-portal/coworker-portal
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

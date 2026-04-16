@@ -17,6 +17,7 @@ trap 'rm -rf "$STAGING"' EXIT
 
 cp "target/${TARGET}/release/${BINARY_NAME}" "${STAGING}/"
 cp -r public "${STAGING}/public"
+cp -r install "${STAGING}/install"
 
 tar -czf "${ARCHIVE_NAME}" -C "${STAGING}" .
 
