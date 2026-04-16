@@ -8,6 +8,10 @@ ARCHIVE_NAME="${BINARY_NAME}-${TARGET}.tar.gz"
 echo "==> Building frontend..."
 (cd frontend && npm install && npm run build)
 
+echo "==> Copying public asset for build..."
+rm -Rf public
+cp -R frontend/public public
+
 echo "==> Cross-compiling for ${TARGET}..."
 SKIP_FRONTEND_BUILD=1 cross build --release --target "${TARGET}"
 
