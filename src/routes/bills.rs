@@ -115,6 +115,8 @@ struct BillLineRow {
     bill_id: i32,
     service_id: Option<i32>,
     quantity: i32,
+    voucher_kind: Option<String>,
+    voucher_amount: Option<i32>,
 }
 
 #[derive(FromRow, Clone)]
@@ -182,7 +184,7 @@ async fn fetch_lines_bulk(
     let rows = sqlx::query_as::<_, BillLineRow>(
         r#"
         SELECT bl.id AS line_id, bl.bill_id, bl.quantity::int4 AS quantity,
-               s.id AS service_id
+               s.id AS service_id, s.kind AS voucher_kind, s.amount AS voucher_amount
         FROM billjobs_billline bl
         LEFT JOIN portal_service s ON s.external_service_id = bl.service_id
         WHERE bl.bill_id = ANY($1)
@@ -199,11 +201,50 @@ async fn fetch_lines_bulk(
     Ok(map)
 }
 
+fn expected_voucher_count(row: &BillLineRow) -> usize {
+    match row.voucher_kind.as_deref() {
+        Some("Book") => row.voucher_amount.unwrap_or(0) as usize * row.quantity as usize,
+        Some("Monthly") => row.quantity as usize,
+        _ => 0,
+    }
+}
+
+/// When a billjobs_service maps to multiple portal_service rows the LEFT JOIN
+/// produces one BillLineRow per match. Pick the candidate whose expected voucher
+/// count matches the actual count; fall back to the first candidate when there
+/// are no vouchers yet (e.g. line just inserted).
+fn deduplicate_lines(
+    lines: Vec<BillLineRow>,
+    vouchers_by_line: &HashMap<i32, Vec<VoucherRow>>,
+) -> Vec<BillLineRow> {
+    let mut order: Vec<i32> = Vec::new();
+    let mut groups: HashMap<i32, Vec<BillLineRow>> = HashMap::new();
+    for row in lines {
+        if !groups.contains_key(&row.line_id) {
+            order.push(row.line_id);
+        }
+        groups.entry(row.line_id).or_default().push(row);
+    }
+    order.into_iter().map(|line_id| {
+        let mut candidates = groups.remove(&line_id).unwrap();
+        if candidates.len() == 1 {
+            return candidates.remove(0);
+        }
+        let actual = vouchers_by_line.get(&line_id).map(|v| v.len()).unwrap_or(0);
+        if actual == 0 {
+            return candidates.remove(0);
+        }
+        let pos = candidates.iter().position(|c| expected_voucher_count(c) == actual);
+        candidates.remove(pos.unwrap_or(0))
+    }).collect()
+}
+
 fn assemble_bill(
     bill: BillRow,
     lines: Vec<BillLineRow>,
     vouchers_by_line: &mut HashMap<i32, Vec<VoucherRow>>,
 ) -> BillResponse {
+    let lines = deduplicate_lines(lines, vouchers_by_line);
     let bill_lines = lines.into_iter().map(|l| {
         let vouchers = vouchers_by_line
             .get(&l.line_id)
