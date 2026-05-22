@@ -133,12 +133,20 @@ export function Dashboard() {
               </p>
             )}
           </div>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => navigate('/bills/new')}
-          >
-            + Nouvelle facture
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              className="btn btn-outline btn-sm"
+              onClick={() => navigate('/invite')}
+            >
+              Inviter un membre
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => navigate('/bills/new')}
+            >
+              + Nouvelle facture
+            </button>
+          </div>
         </div>
 
         {error && (

@@ -395,3 +395,31 @@ A daily background task tracks which days each monthly voucher had at least one 
 - `↻` voucher status refresh button
 - `⎙` invoice PDF download (via superuser session proxy)
 - `⎙` voucher PDF download (visible only when at least one voucher is Valid)
+### Member Invitations
+Authenticated members can invite new users by email. The invited person receives a time-limited link to create their own account without requiring admin intervention.
+
+**Flow:**
+1. Authenticated user submits an email via `/invite`
+2. Backend checks the email is not already registered
+3. A 64-char alphanumeric token is generated (with up to 5 retries on UNIQUE collision) and stored in `portal_invitation_tokens`; any existing unused invitations for the same email are deleted first
+4. An email is sent to the invitee with a link to `/accept-invite?token=…`, valid for 48 hours
+5. Invitee opens the link, fills in username, first name, last name, and password
+6. Backend validates the token (not expired, not used), checks username availability, creates `auth_user` and an empty `billjobs_userprofile`, then invalidates all pending invitations for that email
+7. Invitee is redirected to `/login`
+
+**`portal_invitation_tokens` table:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | SERIAL PK | — |
+| `email` | VARCHAR(254) | invited email address |
+| `invited_by` | INTEGER FK → `auth_user.id` | audit trail |
+| `token` | VARCHAR(64) UNIQUE | 64-char alphanumeric, index on `(token)` and `(email)` |
+| `expires_at` | TIMESTAMPTZ | `NOW() + 48 hours` |
+| `used_at` | TIMESTAMPTZ nullable | set when the invitation is accepted |
+
+**Business rules:**
+- The invited email must not belong to an existing active `auth_user`
+- Accepting any invitation invalidates all other pending invitations for the same email
+- New users start with an empty `billjobs_userprofile.billing_address`; they can update it from their profile page
+- Password must meet the same requirements as the change-password form (8+ chars, at least one digit, one lowercase, one uppercase)

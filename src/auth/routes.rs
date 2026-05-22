@@ -122,23 +122,35 @@ pub async fn forgot_password(
         .execute(&state.db)
         .await;
 
-        let token: String = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(64)
-            .map(char::from)
-            .collect();
+        let token = {
+            let mut tok = None;
+            for _ in 0..5 {
+                let candidate: String = rand::thread_rng()
+                    .sample_iter(&Alphanumeric)
+                    .take(64)
+                    .map(char::from)
+                    .collect();
+                let inserted: Option<String> = sqlx::query_scalar(
+                    "INSERT INTO portal_password_reset_tokens (user_id, token, expires_at) \
+                     VALUES ($1, $2, NOW() + INTERVAL '30 minutes') \
+                     ON CONFLICT (token) DO NOTHING RETURNING token",
+                )
+                .bind(uid)
+                .bind(&candidate)
+                .fetch_optional(&state.db)
+                .await
+                .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
 
-        sqlx::query(
-            "INSERT INTO portal_password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, NOW() + INTERVAL '30 minutes')",
-        )
-        .bind(uid)
-        .bind(&token)
-        .execute(&state.db)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
+                if inserted.is_some() {
+                    tok = Some(candidate);
+                    break;
+                }
+            }
+            tok.ok_or((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?
+        };
 
         let reset_link = format!("{}/reset-password?token={}", state.config.app_base_url, token);
-        if let Err(e) = send_reset_email(smtp, &body.email, &reset_link).await {
+        if let Err(e) = send_smtp_email(smtp, &body.email, "Réinitialisation de votre mot de passe", format!("Bonjour,\n\nCliquez sur le lien suivant pour réinitialiser votre mot de passe :\n{reset_link}\n\nCe lien expire dans 30 minutes.\n\nSi vous n'avez pas fait cette demande, ignorez cet email.")).await {
             tracing::error!(error = %e, "Failed to send reset email");
             return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur lors de l'envoi de l'email"}))));
         }
@@ -198,19 +210,18 @@ pub async fn reset_password(
     Ok(Json(json!({})))
 }
 
-async fn send_reset_email(
+pub(crate) async fn send_smtp_email(
     smtp: &crate::config::SmtpConfig,
     to_email: &str,
-    reset_link: &str,
+    subject: &str,
+    body: String,
 ) -> anyhow::Result<()> {
     let email = Message::builder()
         .from(smtp.from_email.parse()?)
         .to(to_email.parse()?)
-        .subject("Réinitialisation de votre mot de passe")
+        .subject(subject)
         .header(ContentType::TEXT_PLAIN)
-        .body(format!(
-            "Bonjour,\n\nCliquez sur le lien suivant pour réinitialiser votre mot de passe :\n{reset_link}\n\nCe lien expire dans 30 minutes.\n\nSi vous n'avez pas fait cette demande, ignorez cet email."
-        ))?;
+        .body(body)?;
 
     let creds = Credentials::new(smtp.username.clone(), smtp.password.clone());
     let mailer = if smtp.port == 465 {
@@ -224,6 +235,101 @@ async fn send_reset_email(
 
     mailer.send(email).await?;
     Ok(())
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct AcceptInviteRequest {
+    pub token: String,
+    pub username: String,
+    pub first_name: String,
+    pub last_name: String,
+    pub password: String,
+}
+
+#[derive(FromRow)]
+struct InviteTokenRow {
+    email: String,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    used_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/accept-invite",
+    tag = "Invitations",
+    request_body = AcceptInviteRequest,
+    responses(
+        (status = 200, description = "Account created successfully"),
+        (status = 400, description = "Invalid token or validation error"),
+    )
+)]
+pub async fn accept_invite(
+    State(state): State<AppState>,
+    Json(body): Json<AcceptInviteRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let row = sqlx::query_as::<_, InviteTokenRow>(
+        "SELECT email, expires_at, used_at FROM portal_invitation_tokens WHERE token = $1",
+    )
+    .bind(&body.token)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?
+    .ok_or((StatusCode::BAD_REQUEST, Json(json!({"error": "Invitation invalide"}))))?;
+
+    if row.used_at.is_some() {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invitation déjà utilisée"}))));
+    }
+    if row.expires_at < chrono::Utc::now() {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Invitation expirée"}))));
+    }
+
+    let username_taken: Option<i32> = sqlx::query_scalar(
+        "SELECT id FROM auth_user WHERE username = $1",
+    )
+    .bind(&body.username)
+    .fetch_optional(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
+
+    if username_taken.is_some() {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Nom d'utilisateur déjà utilisé"}))));
+    }
+
+    if body.password.len() < 8 {
+        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Le mot de passe doit contenir au moins 8 caractères"}))));
+    }
+
+    let hashed = hash_django_password(&body.password);
+
+    let user_id: i32 = sqlx::query_scalar(
+        "INSERT INTO auth_user \
+         (password, last_login, is_superuser, username, first_name, last_name, email, is_staff, is_active, date_joined) \
+         VALUES ($1, NULL, false, $2, $3, $4, $5, false, true, NOW()) \
+         RETURNING id",
+    )
+    .bind(&hashed)
+    .bind(&body.username)
+    .bind(&body.first_name)
+    .bind(&body.last_name)
+    .bind(&row.email)
+    .fetch_one(&state.db)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
+
+    sqlx::query("INSERT INTO billjobs_userprofile (user_id, billing_address) VALUES ($1, '')")
+        .bind(user_id)
+        .execute(&state.db)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
+
+    let _ = sqlx::query(
+        "UPDATE portal_invitation_tokens SET used_at = NOW() WHERE email = $1 AND used_at IS NULL",
+    )
+    .bind(&row.email)
+    .execute(&state.db)
+    .await;
+
+    Ok(Json(json!({})))
 }
 
 /// Authenticates against Django's login page and returns the `sessionid` cookie value.

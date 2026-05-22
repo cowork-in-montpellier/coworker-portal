@@ -47,6 +47,8 @@ impl Modify for SecurityAddon {
         crate::routes::profile::ProfileResponse,
         crate::routes::profile::UpdateProfileRequest,
         crate::routes::profile::ChangePasswordRequest,
+        crate::routes::invitations::SendInvitationRequest,
+        crate::auth::routes::AcceptInviteRequest,
     )),
     modifiers(&SecurityAddon),
     tags(
@@ -55,6 +57,7 @@ impl Modify for SecurityAddon {
         (name = "Bills", description = "Bill management"),
         (name = "Vouchers", description = "Voucher status and PDF generation"),
         (name = "Profile", description = "User profile management"),
+        (name = "Invitations", description = "Member invitation management"),
     )
 )]
 pub struct ApiDoc;

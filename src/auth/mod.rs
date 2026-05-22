@@ -15,6 +15,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(routes::login))
         .routes(routes!(routes::forgot_password))
         .routes(routes!(routes::reset_password))
+        .routes(routes!(routes::accept_invite))
 }
 
 /// Authenticated user extracted from the JWT Bearer token.
