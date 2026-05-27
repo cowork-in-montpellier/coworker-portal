@@ -18,12 +18,16 @@ pub struct RoomResponse {
     pub color: String,
 }
 
-pub(crate) struct IcalResponse(String);
+pub(crate) struct IcalResponse(String, chrono::DateTime<Utc>);
 
 impl IntoResponse for IcalResponse {
     fn into_response(self) -> axum::response::Response {
+        let last_modified = self.1.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
         (
-            [(axum::http::header::CONTENT_TYPE, "text/calendar; charset=utf-8")],
+            [
+                (axum::http::header::CONTENT_TYPE, "text/calendar; charset=utf-8".to_string()),
+                (axum::http::header::LAST_MODIFIED, last_modified),
+            ],
             self.0,
         )
             .into_response()
@@ -37,6 +41,7 @@ struct BookingRow {
     start_at: chrono::DateTime<Utc>,
     end_at: chrono::DateTime<Utc>,
     notes: String,
+    created_at: chrono::DateTime<Utc>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -47,6 +52,7 @@ struct BookingWithRoomRow {
     start_at: chrono::DateTime<Utc>,
     end_at: chrono::DateTime<Utc>,
     notes: String,
+    created_at: chrono::DateTime<Utc>,
 }
 
 #[utoipa::path(
@@ -96,12 +102,14 @@ pub async fn room_calendar(
     .ok_or((StatusCode::NOT_FOUND, Json(json!({"error": "Salle introuvable"}))))?;
 
     let bookings = sqlx::query_as::<_, BookingRow>(
-        "SELECT id, title, start_at, end_at, notes FROM portal_room_booking WHERE room_id = $1 ORDER BY start_at",
+        "SELECT id, title, start_at, end_at, notes, created_at FROM portal_room_booking WHERE room_id = $1 ORDER BY start_at",
     )
     .bind(id)
     .fetch_all(&state.db)
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
+
+    let last_modified = bookings.iter().map(|b| b.created_at).max().unwrap_or_else(Utc::now);
 
     let mut calendar = Calendar::new();
     calendar.name(&room.name);
@@ -116,7 +124,7 @@ pub async fn room_calendar(
         calendar.push(event);
     }
 
-    Ok(IcalResponse(calendar.to_string()))
+    Ok(IcalResponse(calendar.to_string(), last_modified))
 }
 
 #[utoipa::path(
@@ -131,7 +139,7 @@ pub async fn all_calendar(
     State(state): State<AppState>,
 ) -> ApiResult<IcalResponse> {
     let bookings = sqlx::query_as::<_, BookingWithRoomRow>(
-        "SELECT b.id, b.title, r.name AS room_name, b.start_at, b.end_at, b.notes \
+        "SELECT b.id, b.title, r.name AS room_name, b.start_at, b.end_at, b.notes, b.created_at \
          FROM portal_room_booking b \
          JOIN portal_room r ON r.id = b.room_id \
          ORDER BY b.start_at",
@@ -139,6 +147,8 @@ pub async fn all_calendar(
     .fetch_all(&state.db)
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
+
+    let last_modified = bookings.iter().map(|b| b.created_at).max().unwrap_or_else(Utc::now);
 
     let mut calendar = Calendar::new();
     calendar.name("Cowork'in Montpellier — Toutes les salles");
@@ -154,5 +164,5 @@ pub async fn all_calendar(
         calendar.push(event);
     }
 
-    Ok(IcalResponse(calendar.to_string()))
+    Ok(IcalResponse(calendar.to_string(), last_modified))
 }
