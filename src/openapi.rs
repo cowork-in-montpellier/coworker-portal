@@ -49,6 +49,9 @@ impl Modify for SecurityAddon {
         crate::routes::profile::ChangePasswordRequest,
         crate::routes::invitations::SendInvitationRequest,
         crate::auth::routes::AcceptInviteRequest,
+        crate::routes::rooms::RoomResponse,
+        crate::routes::bookings::BookingResponse,
+        crate::routes::bookings::CreateBookingRequest,
     )),
     modifiers(&SecurityAddon),
     tags(
@@ -58,6 +61,8 @@ impl Modify for SecurityAddon {
         (name = "Vouchers", description = "Voucher status and PDF generation"),
         (name = "Profile", description = "User profile management"),
         (name = "Invitations", description = "Member invitation management"),
+        (name = "Rooms", description = "Room availability and calendar feeds"),
+        (name = "Bookings", description = "Room booking management"),
     )
 )]
 pub struct ApiDoc;

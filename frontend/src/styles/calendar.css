@@ -1,0 +1,162 @@
+/* Override react-big-calendar default styles to match DaisyUI theming */
+
+.rbc-calendar {
+  color: var(--color-base-content);
+}
+
+/* Toolbar buttons */
+.rbc-toolbar button {
+  color: var(--color-base-content);
+  background-color: var(--color-base-100);
+  border-color: color-mix(in oklch, var(--color-base-content) 25%, transparent);
+}
+.rbc-toolbar button:hover {
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+}
+.rbc-toolbar button.rbc-active,
+.rbc-toolbar button.rbc-active:focus,
+.rbc-toolbar button.rbc-active:hover {
+  background-color: var(--color-base-300, var(--color-base-200));
+  color: var(--color-base-content);
+  box-shadow: none;
+}
+.rbc-toolbar button:focus {
+  color: var(--color-base-content);
+}
+
+/* Header row (day names) */
+.rbc-header {
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+  border-color: color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+.rbc-header + .rbc-header {
+  border-color: color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+
+/* Outer borders */
+.rbc-time-view,
+.rbc-month-view {
+  border-color: color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+
+/* Hide the all-day row — bookings are never all-day */
+.rbc-allday-cell {
+  display: none;
+}
+
+/* Time gutter (left column with hour labels) */
+.rbc-time-header-gutter,
+.rbc-time-gutter {
+  background-color: var(--color-base-200) !important;
+  color: var(--color-base-content);
+}
+.rbc-time-header-gutter {
+  border-color: color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+
+/* Time header row and resource header row */
+.rbc-time-header,
+.rbc-time-header-content,
+.rbc-row-resource {
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+  border-color: color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+
+/* Hour labels inside the gutter */
+.rbc-label {
+  color: var(--color-base-content);
+  opacity: 0.7;
+}
+
+/* Time content area */
+.rbc-time-content {
+  background-color: var(--color-base-100);
+  border-color: color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+
+/* Hour slot groups */
+.rbc-timeslot-group {
+  border-color: color-mix(in oklch, var(--color-base-content) 12%, transparent);
+}
+
+/* Individual time slots (30-min lines) */
+.rbc-day-slot .rbc-time-slot {
+  border-color: color-mix(in oklch, var(--color-base-content) 7%, transparent);
+}
+.rbc-time-slot {
+  color: var(--color-base-content);
+}
+
+/* Day background */
+.rbc-day-bg {
+  background-color: var(--color-base-100);
+}
+.rbc-day-bg + .rbc-day-bg {
+  border-color: color-mix(in oklch, var(--color-base-content) 12%, transparent);
+}
+
+/* Today highlight — replace the bright light-blue with a subtle primary tint */
+.rbc-today {
+  background-color: color-mix(in oklch, var(--color-primary) 12%, var(--color-base-100)) !important;
+}
+
+/* Off-range days (month view) */
+.rbc-off-range-bg {
+  background-color: var(--color-base-200);
+}
+.rbc-off-range {
+  color: color-mix(in oklch, var(--color-base-content) 40%, transparent);
+}
+
+/* Slot selection highlight (drag to create) */
+.rbc-slot-selection {
+  background-color: color-mix(in oklch, var(--color-primary) 30%, transparent);
+  color: var(--color-base-content);
+}
+
+/* Current time indicator */
+.rbc-current-time-indicator {
+  background-color: var(--color-primary);
+}
+
+/* Month view rows */
+.rbc-month-row + .rbc-month-row {
+  border-color: color-mix(in oklch, var(--color-base-content) 12%, transparent);
+}
+.rbc-date-cell {
+  color: var(--color-base-content);
+}
+.rbc-date-cell.rbc-now button {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+/* "Show more" link */
+.rbc-show-more {
+  color: var(--color-primary);
+  background-color: transparent;
+}
+
+/* Agenda view */
+.rbc-agenda-view table.rbc-agenda-table {
+  border-color: color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+.rbc-agenda-view table.rbc-agenda-table tbody > tr > td {
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+  border-color: color-mix(in oklch, var(--color-base-content) 12%, transparent);
+}
+.rbc-agenda-view table.rbc-agenda-table tbody > tr > td + td {
+  border-color: color-mix(in oklch, var(--color-base-content) 12%, transparent);
+}
+.rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+  border-color: color-mix(in oklch, var(--color-base-content) 15%, transparent);
+}
+.rbc-agenda-view table.rbc-agenda-table tbody > tr:hover td {
+  background-color: var(--color-base-200);
+}

@@ -3,6 +3,7 @@ import { isAuthenticated } from './auth'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { ToastProvider } from './lib/toast'
 import { AcceptInvite } from './pages/AcceptInvite'
+import { CalendarPage } from './pages/Calendar'
 import { CreateBill } from './pages/CreateBill'
 import { Dashboard } from './pages/Dashboard'
 import { ForgotPassword } from './pages/ForgotPassword'
@@ -37,6 +38,7 @@ function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/invite" element={<ProtectedRoute><InviteMember /></ProtectedRoute>} />
         <Route path="/accept-invite" element={<AcceptInvite />} />
+        <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

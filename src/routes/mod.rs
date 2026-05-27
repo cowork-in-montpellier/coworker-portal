@@ -2,9 +2,11 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::AppState;
 
 pub mod bills;
+pub mod bookings;
 pub mod guest;
 pub mod invitations;
 pub mod profile;
+pub mod rooms;
 pub mod services;
 pub mod status;
 pub mod vouchers;
@@ -25,4 +27,10 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(guest::check_guest_vouchers))
         .routes(routes!(guest::guest_bill_pdf))
         .routes(routes!(invitations::send_invitation))
+        .routes(routes!(rooms::list_rooms))
+        .routes(routes!(rooms::room_calendar))
+        .routes(routes!(rooms::all_calendar))
+        .routes(routes!(bookings::list_bookings))
+        .routes(routes!(bookings::create_booking))
+        .routes(routes!(bookings::delete_booking))
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { getTokenPayload, isAuthenticated, logout } from '../auth'
 import { type ThemeId, getTheme, setTheme } from '../lib/theme'
 
@@ -7,6 +7,7 @@ export function Navbar() {
   const user = getTokenPayload()
   const authenticated = isAuthenticated()
   const [theme, setThemeState] = useState<ThemeId>(getTheme)
+  const location = useLocation()
 
   const handleThemeChange = (t: ThemeId) => {
     setTheme(t)
@@ -18,12 +19,30 @@ export function Navbar() {
     window.location.href = '/login'
   }
 
+  const navLink = (to: string, label: string) => {
+    const active = location.pathname === to || (to === '/dashboard' && location.pathname.startsWith('/bills'))
+    return (
+      <Link
+        to={to}
+        className={`btn btn-ghost btn-sm ${active ? 'btn-active' : ''}`}
+      >
+        {label}
+      </Link>
+    )
+  }
+
   return (
     <div className="navbar bg-base-100 border-b border-base-200 px-4">
-      <div className="navbar-start">
+      <div className="navbar-start gap-4">
         <Link to={authenticated ? '/dashboard' : '/login'}>
           <img src="/logo-default.png" alt="Coworking" className="h-8" />
         </Link>
+        {authenticated && (
+          <nav className="flex items-center gap-1">
+            {navLink('/dashboard', 'Factures')}
+            {navLink('/calendar', 'Calendrier')}
+          </nav>
+        )}
       </div>
       <div className="navbar-end gap-3">
         <label className="flex items-center gap-1 cursor-pointer" title={theme === 'corporate' ? 'Passer en mode sombre' : 'Passer en mode clair'}>
