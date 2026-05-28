@@ -112,7 +112,7 @@ pub async fn room_calendar(
     let last_modified = bookings.iter().map(|b| b.created_at).max().unwrap_or_else(Utc::now);
 
     let mut calendar = Calendar::new();
-    calendar.name(&room.name);
+    calendar.name(&format!("Cowork'in Montpellier — {}", &room.name));
     for b in bookings {
         let event = Event::new()
             .summary(&b.title)

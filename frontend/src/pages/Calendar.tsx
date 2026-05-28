@@ -17,6 +17,9 @@ import {
 import { ApiError } from '../api/client'
 import { getTokenPayload } from '../auth'
 
+const MIN_TIME = new Date(1970, 0, 1, 8, 0, 0)
+const MAX_TIME = new Date(1970, 0, 1, 20, 0, 0)
+
 const localizer = dateFnsLocalizer({
   format,
   parse,
@@ -265,6 +268,8 @@ export function CalendarPage() {
               resourceIdAccessor="id"
               resourceTitleAccessor="title"
               defaultView="week"
+              min={MIN_TIME}
+              max={MAX_TIME}
               scrollToTime={new Date()}
               selectable
               onSelectSlot={handleSelectSlot}
@@ -273,6 +278,10 @@ export function CalendarPage() {
               eventPropGetter={eventPropGetter as (event: object) => object}
               components={{ agenda: { event: AgendaEvent as React.ComponentType<EventProps<object>> } }}
               style={{ height: 600 }}
+              formats={{
+                dayFormat: (date, culture, localizer) =>
+                  localizer?.format(date, 'EEEE d', culture) ?? '',
+              }}
               messages={{
                 week: 'Semaine',
                 day: 'Jour',
@@ -289,6 +298,14 @@ export function CalendarPage() {
                 allDay: 'Journée',
               }}
             />
+            <div className="flex flex-wrap gap-4 pt-3 border-t border-base-200">
+              {rooms.map(room => (
+                <div key={room.id} className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: room.color }} />
+                  <span className="text-sm">{room.name}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
