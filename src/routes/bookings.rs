@@ -20,7 +20,7 @@ pub struct BookingResponse {
     pub title: String,
     pub start_at: DateTime<Utc>,
     pub end_at: DateTime<Utc>,
-    pub created_by: i32,
+    pub created_by: Option<i32>,
     pub notes: String,
     pub created_at: DateTime<Utc>,
 }
@@ -44,7 +44,6 @@ pub struct ListBookingsQuery {
     get,
     path = "/bookings",
     tag = "Bookings",
-    security(("bearer_auth" = [])),
     params(
         ("start" = String, Query, description = "Range start (ISO 8601)"),
         ("end" = String, Query, description = "Range end (ISO 8601)"),
@@ -55,7 +54,6 @@ pub struct ListBookingsQuery {
 )]
 pub async fn list_bookings(
     State(state): State<AppState>,
-    _user: CurrentUser,
     Query(params): Query<ListBookingsQuery>,
 ) -> ApiResult<Json<Vec<BookingResponse>>> {
     let bookings = sqlx::query_as::<_, BookingResponse>(

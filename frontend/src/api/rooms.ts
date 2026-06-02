@@ -14,7 +14,7 @@ export const BookingSchema = z.object({
   title: z.string(),
   start_at: z.string(),
   end_at: z.string(),
-  created_by: z.number(),
+  created_by: z.number().nullable(),
   notes: z.string(),
   created_at: z.string(),
 })

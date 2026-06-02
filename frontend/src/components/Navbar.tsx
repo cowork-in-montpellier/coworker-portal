@@ -37,12 +37,10 @@ export function Navbar() {
         <Link to={authenticated ? '/dashboard' : '/login'}>
           <img src="/logo-default.png" alt="Coworking" className="h-8" />
         </Link>
-        {authenticated && (
-          <nav className="flex items-center gap-1">
-            {navLink('/dashboard', 'Factures')}
-            {navLink('/calendar', 'Calendrier')}
-          </nav>
-        )}
+        <nav className="flex items-center gap-1">
+          {authenticated && navLink('/dashboard', 'Factures')}
+          {navLink('/calendar', 'Calendrier')}
+        </nav>
       </div>
       <div className="navbar-end gap-3">
         <label className="flex items-center gap-1 cursor-pointer" title={theme === 'corporate' ? 'Passer en mode sombre' : 'Passer en mode clair'}>

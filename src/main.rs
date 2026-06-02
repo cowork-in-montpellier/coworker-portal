@@ -85,7 +85,14 @@ async fn main() -> Result<()> {
         config: Arc::new(config.clone()),
     };
 
-    tasks::start(state.clone(), &config.voucher_sync_cron, &config.monthly_usage_cron).await?;
+    tasks::start(
+        state.clone(),
+        &config.voucher_sync_cron,
+        &config.monthly_usage_cron,
+        config.google_calendar_ical_url.as_deref(),
+        &config.google_calendar_sync_cron,
+        config.google_calendar_room_id,
+    ).await?;
 
     let (router, api) = OpenApiRouter::with_openapi(openapi::ApiDoc::openapi())
         .nest("/api/auth", auth::router())

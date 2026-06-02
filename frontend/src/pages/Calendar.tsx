@@ -15,7 +15,7 @@ import {
   listRooms,
 } from '../api/rooms'
 import { ApiError } from '../api/client'
-import { getTokenPayload } from '../auth'
+import { getTokenPayload, isAuthenticated } from '../auth'
 
 const MIN_TIME = new Date(1970, 0, 1, 8, 0, 0)
 const MAX_TIME = new Date(1970, 0, 1, 20, 0, 0)
@@ -271,8 +271,8 @@ export function CalendarPage() {
               min={MIN_TIME}
               max={MAX_TIME}
               scrollToTime={new Date()}
-              selectable
-              onSelectSlot={handleSelectSlot}
+              selectable={isAuthenticated()}
+              onSelectSlot={isAuthenticated() ? handleSelectSlot : undefined}
               onSelectEvent={handleSelectEvent as (event: object) => void}
               onRangeChange={handleRangeChange}
               eventPropGetter={eventPropGetter as (event: object) => object}
@@ -483,14 +483,16 @@ export function CalendarPage() {
             >
               Fermer
             </button>
-            <button
-              type="button"
-              className="btn btn-error"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
-              {deleting ? <span className="loading loading-spinner loading-xs" /> : 'Supprimer'}
-            </button>
+            {isAuthenticated() && (
+              <button
+                type="button"
+                className="btn btn-error"
+                onClick={handleDelete}
+                disabled={deleting}
+              >
+                {deleting ? <span className="loading loading-spinner loading-xs" /> : 'Supprimer'}
+              </button>
+            )}
           </div>
         </div>
         <div className="modal-backdrop" onClick={() => setSelectedBooking(null)} />

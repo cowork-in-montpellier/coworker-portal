@@ -7,7 +7,6 @@ use utoipa::ToSchema;
 use axum::http::StatusCode;
 
 use crate::AppState;
-use crate::auth::CurrentUser;
 
 type ApiResult<T> = Result<T, (StatusCode, Json<serde_json::Value>)>;
 
@@ -59,14 +58,12 @@ struct BookingWithRoomRow {
     get,
     path = "/rooms",
     tag = "Rooms",
-    security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "List of rooms", body = Vec<RoomResponse>),
     )
 )]
 pub async fn list_rooms(
     State(state): State<AppState>,
-    _user: CurrentUser,
 ) -> ApiResult<Json<Vec<RoomResponse>>> {
     let rooms = sqlx::query_as::<_, RoomResponse>(
         "SELECT id, name, color FROM portal_room ORDER BY id",

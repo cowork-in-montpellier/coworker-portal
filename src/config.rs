@@ -18,6 +18,9 @@ pub struct Config {
     pub unify: UnifyConfig,
     pub voucher_sync_cron: String,
     pub monthly_usage_cron: String,
+    pub google_calendar_ical_url: Option<String>,
+    pub google_calendar_sync_cron: String,
+    pub google_calendar_room_id: i32,
     pub smtp: Option<SmtpConfig>,
     pub app_base_url: String,
 }
@@ -79,6 +82,13 @@ impl Config {
                 .unwrap_or_else(|_| "0 0 9-19 * * 1-5".into()),
             monthly_usage_cron: std::env::var("MONTHLY_USAGE_CRON")
                 .unwrap_or_else(|_| "0 0 9-19 * * *".into()),
+            google_calendar_ical_url: std::env::var("GOOGLE_CALENDAR_ICAL_URL").ok(),
+            google_calendar_sync_cron: std::env::var("GOOGLE_CALENDAR_SYNC_CRON")
+                .unwrap_or_else(|_| "0 */15 * * * *".into()),
+            google_calendar_room_id: std::env::var("GOOGLE_CALENDAR_ROOM_ID")
+                .unwrap_or_else(|_| "1".into())
+                .parse()
+                .context("GOOGLE_CALENDAR_ROOM_ID must be a number")?,
             unify: UnifyConfig {
                 mode: if std::env::var("UNIFY_MOCK").as_deref() == Ok("true") {
                     UnifyMode::Mock
