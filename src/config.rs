@@ -21,6 +21,10 @@ pub struct Config {
     pub google_calendar_ical_url: Option<String>,
     pub google_calendar_sync_cron: String,
     pub google_calendar_room_id: i32,
+    pub google_caldav_enabled: bool,
+    pub google_caldav_email: Option<String>,
+    pub google_caldav_password: Option<String>,
+    pub google_caldav_calendar_id: Option<String>,
     pub smtp: Option<SmtpConfig>,
     pub app_base_url: String,
 }
@@ -89,6 +93,10 @@ impl Config {
                 .unwrap_or_else(|_| "1".into())
                 .parse()
                 .context("GOOGLE_CALENDAR_ROOM_ID must be a number")?,
+            google_caldav_enabled: std::env::var("GOOGLE_CALDAV_ENABLED").as_deref() == Ok("true"),
+            google_caldav_email: std::env::var("GOOGLE_CALDAV_EMAIL").ok(),
+            google_caldav_password: std::env::var("GOOGLE_CALDAV_PASSWORD").ok(),
+            google_caldav_calendar_id: std::env::var("GOOGLE_CALDAV_CALENDAR_ID").ok(),
             unify: UnifyConfig {
                 mode: if std::env::var("UNIFY_MOCK").as_deref() == Ok("true") {
                     UnifyMode::Mock

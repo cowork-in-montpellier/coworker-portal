@@ -92,17 +92,15 @@ pub async fn create_booking(
         return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "La fin doit être après le début"}))));
     }
 
-    let room_exists: Option<i32> = sqlx::query_scalar(
-        "SELECT id FROM portal_room WHERE id = $1",
+    let room_name: Option<String> = sqlx::query_scalar(
+        "SELECT name FROM portal_room WHERE id = $1",
     )
     .bind(body.room_id)
     .fetch_optional(&state.db)
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
 
-    if room_exists.is_none() {
-        return Err((StatusCode::BAD_REQUEST, Json(json!({"error": "Salle introuvable"}))));
-    }
+    let room_name = room_name.ok_or((StatusCode::BAD_REQUEST, Json(json!({"error": "Salle introuvable"}))))?;
 
     let conflict: Option<i32> = sqlx::query_scalar(
         "SELECT id FROM portal_room_booking \
@@ -120,9 +118,28 @@ pub async fn create_booking(
         return Err((StatusCode::CONFLICT, Json(json!({"error": "Cette salle est déjà réservée sur ce créneau"}))));
     }
 
+    let caldav = match (state.config.google_caldav_enabled, &state.config.google_caldav_email, &state.config.google_caldav_password, &state.config.google_caldav_calendar_id) {
+        (true, Some(email), Some(password), Some(calendar_id)) => Some((email.as_str(), password.as_str(), calendar_id.as_str())),
+        _ => None,
+    };
+
+    let google_uid: Option<String> = if caldav.is_some() {
+        Some(uuid::Uuid::new_v4().to_string())
+    } else {
+        None
+    };
+
+    if let (Some(uid), Some((email, password, calendar_id))) = (&google_uid, caldav) {
+        let caldav_summary = format!("{} / {}", room_name, body.title);
+        let client = crate::caldav::CalDavClient { email, password, calendar_id };
+        if let Err(e) = client.create_event(uid, &caldav_summary, body.start_at, body.end_at, body.notes.as_deref().unwrap_or("")).await {
+            tracing::error!(uid, error = %e, "CalDAV create event failed — booking will be created without Google Calendar sync");
+        }
+    }
+
     let booking = sqlx::query_as::<_, BookingResponse>(
-        "INSERT INTO portal_room_booking (room_id, title, start_at, end_at, created_by, notes) \
-         VALUES ($1, $2, $3, $4, $5, $6) \
+        "INSERT INTO portal_room_booking (room_id, title, start_at, end_at, created_by, notes, google_uid) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7) \
          RETURNING id, room_id, title, start_at, end_at, created_by, notes, created_at",
     )
     .bind(body.room_id)
@@ -131,11 +148,19 @@ pub async fn create_booking(
     .bind(body.end_at)
     .bind(user_id)
     .bind(body.notes.as_deref().unwrap_or(""))
+    .bind(&google_uid)
     .fetch_one(&state.db)
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
 
     Ok((StatusCode::CREATED, Json(booking)))
+}
+
+#[derive(sqlx::FromRow)]
+struct DeletedBooking {
+    #[allow(dead_code)]
+    id: i32,
+    google_uid: Option<String>,
 }
 
 #[utoipa::path(
@@ -154,16 +179,27 @@ pub async fn delete_booking(
     _user: CurrentUser,
     Path(id): Path<i32>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let deleted: Option<i32> = sqlx::query_scalar(
-        "DELETE FROM portal_room_booking WHERE id = $1 RETURNING id",
+    let deleted = sqlx::query_as::<_, DeletedBooking>(
+        "DELETE FROM portal_room_booking WHERE id = $1 RETURNING id, google_uid",
     )
     .bind(id)
     .fetch_optional(&state.db)
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
 
-    if deleted.is_none() {
-        return Err((StatusCode::NOT_FOUND, Json(json!({"error": "Réservation introuvable"}))));
+    let deleted = deleted.ok_or((StatusCode::NOT_FOUND, Json(json!({"error": "Réservation introuvable"}))))?;
+
+    if let (true, Some(uid), Some(email), Some(password), Some(calendar_id)) = (
+        state.config.google_caldav_enabled,
+        &deleted.google_uid,
+        &state.config.google_caldav_email,
+        &state.config.google_caldav_password,
+        &state.config.google_caldav_calendar_id,
+    ) {
+        let client = crate::caldav::CalDavClient { email, password, calendar_id };
+        if let Err(e) = client.delete_event(uid).await {
+            tracing::error!(uid, error = %e, "CalDAV delete event failed");
+        }
     }
 
     Ok(Json(json!({})))

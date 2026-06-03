@@ -264,9 +264,6 @@ export function CalendarPage() {
               localizer={localizer}
               culture="fr"
               events={events}
-              resources={rooms.map(r => ({ id: r.id, title: r.name }))}
-              resourceIdAccessor="id"
-              resourceTitleAccessor="title"
               defaultView="week"
               min={MIN_TIME}
               max={MAX_TIME}

@@ -9,6 +9,7 @@ use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 
 mod auth;
+mod caldav;
 mod config;
 mod domain;
 mod error;
