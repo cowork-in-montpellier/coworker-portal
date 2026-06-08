@@ -47,6 +47,11 @@ impl UnifyClient for MockUnifyClient {
             .collect())
     }
 
+    async fn revoke_voucher(&self, unify_id: &str) -> Result<()> {
+        tracing::debug!(unify_id = %unify_id, "mock: revoked voucher");
+        Ok(())
+    }
+
     async fn get_active_guests(&self, _within_hours: u32) -> Result<Vec<ActiveGuest>> {
         tracing::debug!("mock: get_active_guests — returning empty list");
         Ok(vec![])

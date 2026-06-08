@@ -74,6 +74,9 @@ export async function checkVouchers(billId: number): Promise<VoucherStatusEntry[
   return VoucherCheckResponseSchema.parse(raw).data
 }
 
+export const revokeVoucher = (billId: number, unifyId: string) =>
+  apiFetch<unknown>(`/api/bills/${billId}/vouchers/${unifyId}/revoke`, { method: 'POST' })
+
 export async function downloadBillPdf(billId: number, billNumber: string): Promise<void> {
   const res = await fetch(`/api/bills/${billId}/pdf`, {
     headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },

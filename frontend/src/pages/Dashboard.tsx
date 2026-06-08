@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { type Bill, type ListBillsResponse, type VoucherStatusEntry, checkVouchers, downloadBillPdf, listBills } from '../api/bills'
+import { type Bill, type ListBillsResponse, type VoucherStatusEntry, checkVouchers, downloadBillPdf, listBills, revokeVoucher } from '../api/bills'
 import { generateVoucherPdf } from '../components/VoucherPdf'
 import { type Service, listServices } from '../api/services'
 import { Navbar } from '../components/Navbar'
 import { useStatus } from '../hooks/useStatus'
+import { useToast } from '../lib/toast'
+import { ApiError } from '../api/client'
 
 const PAGE_SIZE = 20
 
@@ -29,6 +31,11 @@ function SkeletonRow() {
   )
 }
 
+/** True when the given ISO date (YYYY-MM-DD) falls in a calendar month strictly before the current one. */
+function isPastMonth(isoDate: string): boolean {
+  return isoDate.slice(0, 7) < new Date().toISOString().slice(0, 7)
+}
+
 /** Flatten all vouchers from all lines of a bill into a single list. */
 function flattenVouchers(bill: Bill): VoucherStatusEntry[] {
   return bill.lines.flatMap(l => l.vouchers.map(v => ({
@@ -51,9 +58,35 @@ export function Dashboard() {
   const [checkingId, setCheckingId] = useState<number | null>(null)
   const [downloadingId, setDownloadingId] = useState<number | null>(null)
   const [invoiceId, setInvoiceId] = useState<number | null>(null)
+  const [copiedVoucherId, setCopiedVoucherId] = useState<string | null>(null)
+  const copiedVoucherTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [revokingVoucherId, setRevokingVoucherId] = useState<string | null>(null)
+  const toast = useToast()
 
   const toggleExpand = (id: number) =>
     setExpandedId(prev => (prev === id ? null : id))
+
+  const handleCopyVoucher = (unifyId: string, code: string) => {
+    navigator.clipboard.writeText(code.replace(/-/g, '')).then(() => {
+      setCopiedVoucherId(unifyId)
+      if (copiedVoucherTimer.current) clearTimeout(copiedVoucherTimer.current)
+      copiedVoucherTimer.current = setTimeout(() => setCopiedVoucherId(null), 2000)
+    })
+  }
+
+  const handleRevokeVoucher = async (billId: number, unifyId: string) => {
+    if (!window.confirm('Révoquer ce voucher ? Il deviendra immédiatement inutilisable.')) return
+    setRevokingVoucherId(unifyId)
+    try {
+      await revokeVoucher(billId, unifyId)
+      await handleCheckVouchers(billId)
+      toast('Voucher révoqué', 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Erreur lors de la révocation du voucher', 'error')
+    } finally {
+      setRevokingVoucherId(null)
+    }
+  }
 
   const handleInvoice = async (billId: number, billNumber: string) => {
     setInvoiceId(billId)
@@ -265,6 +298,8 @@ export function Dashboard() {
                               const lineLabel = lineName
                                 ? (line.quantity > 1 ? `${line.quantity}× ${lineName}` : lineName)
                                 : null
+                              const isMonthly = line.service_id != null
+                                && serviceMap.get(line.service_id)?.voucher_spec.kind === 'Monthly'
                               return (
                                 <div key={line.id}>
                                   {bill.lines.filter(l => l.vouchers.length > 0).length > 1 && lineLabel && (
@@ -275,15 +310,37 @@ export function Dashboard() {
                                       const liveStatus = voucherStatuses.get(bill.id)?.find(s => s.unify_id === v.unify_id)
                                       const status = liveStatus?.status ?? null
                                       const isExpired = status === 'Expired' || status === 'Used'
+                                      const canRevoke = isMonthly && status === 'Valid' && isPastMonth(bill.date)
                                       return (
                                         <div
                                           key={v.unify_id}
-                                          className={`card border shadow-sm w-44 transition-opacity ${
+                                          className={`card border shadow-sm w-44 transition-opacity group relative ${
                                             isExpired
                                               ? 'bg-base-200 border-base-300 opacity-40'
                                               : 'bg-base-100 border-base-300'
                                           }`}
                                         >
+                                          <div className="absolute bottom-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                            <button
+                                              type="button"
+                                              className="btn btn-xs btn-ghost"
+                                              title="Copier le code (sans tirets)"
+                                              onClick={() => handleCopyVoucher(v.unify_id, v.code)}
+                                            >
+                                              {copiedVoucherId === v.unify_id ? 'Copié ✓' : 'Copier'}
+                                            </button>
+                                            {canRevoke && (
+                                              <button
+                                                type="button"
+                                                className="btn btn-xs btn-ghost text-error"
+                                                title="Révoquer ce voucher du mois précédent"
+                                                disabled={revokingVoucherId === v.unify_id}
+                                                onClick={() => handleRevokeVoucher(bill.id, v.unify_id)}
+                                              >
+                                                {revokingVoucherId === v.unify_id ? '…' : 'Révoquer'}
+                                              </button>
+                                            )}
+                                          </div>
                                           <div className="card-body p-3 gap-1">
                                             <div className="flex items-center justify-between">
                                               <p className="text-xs text-base-content/40 font-medium">Voucher {i + 1}</p>

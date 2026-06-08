@@ -20,6 +20,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(bills::create_bill, bills::list_bills))
         .routes(routes!(bills::get_bill))
         .routes(routes!(vouchers::check_vouchers))
+        .routes(routes!(vouchers::revoke_voucher))
         .routes(routes!(vouchers::bill_pdf))
         .routes(routes!(guest::list_guest_services))
         .routes(routes!(guest::create_guest_bill))

@@ -43,4 +43,7 @@ pub trait UnifyClient: Send + Sync {
     /// Fetch guest devices that connected via a voucher within the last `within_hours` hours.
     /// Only returns guests that have a voucher_id (i.e. authorized via voucher).
     async fn get_active_guests(&self, within_hours: u32) -> Result<Vec<ActiveGuest>>;
+
+    /// Revoke (delete) a voucher on Unify by its `_id`.
+    async fn revoke_voucher(&self, unify_id: &str) -> Result<()>;
 }

@@ -195,6 +195,14 @@ impl UnifyClient for RealUnifyClient {
         Ok(map)
     }
 
+    async fn revoke_voucher(&self, unify_id: &str) -> Result<()> {
+        let body = serde_json::json!({ "cmd": "delete-voucher", "_id": unify_id });
+        let url = format!("{}/api/s/{}/cmd/hotspot", self.base_url, self.site);
+        tracing::debug!(%url, unify_id, "Revoking Unify voucher");
+        self.send_with_retry(|| self.client.post(&url).json(&body)).await?;
+        Ok(())
+    }
+
     async fn get_active_guests(&self, within_hours: u32) -> Result<Vec<super::ActiveGuest>> {
         let body = serde_json::json!({ "within": within_hours });
         let url = format!("{}/api/s/{}/stat/guest", self.base_url, self.site);
