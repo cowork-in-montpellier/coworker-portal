@@ -24,7 +24,9 @@ pub struct CreateBillLineRequest {
     #[serde(default = "default_quantity")]
     pub quantity: i32,
 }
-fn default_quantity() -> i32 { 1 }
+fn default_quantity() -> i32 {
+    1
+}
 
 #[derive(Deserialize, ToSchema)]
 pub struct CreateBillRequest {
@@ -49,8 +51,12 @@ pub struct ListBillsQuery {
     #[param(required = false)]
     pub number: Option<String>,
 }
-fn default_offset() -> i64 { 0 }
-fn default_limit() -> i64 { 20 }
+fn default_offset() -> i64 {
+    0
+}
+fn default_limit() -> i64 {
+    20
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct VoucherResponse {
@@ -141,7 +147,14 @@ fn row_to_service(row: ServiceRow) -> Result<Service, AppError> {
         },
         _ => return Err(AppError::NotFound),
     };
-    Ok(Service { id: row.id, name: row.name, description: row.description, price: row.price, voucher_spec, external_service_id: row.external_service_id })
+    Ok(Service {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        price: row.price,
+        voucher_spec,
+        external_service_id: row.external_service_id,
+    })
 }
 
 fn voucher_row_to_response(v: VoucherRow) -> VoucherResponse {
@@ -228,18 +241,23 @@ fn deduplicate_lines(
         }
         groups.entry(row.line_id).or_default().push(row);
     }
-    order.into_iter().map(|line_id| {
-        let mut candidates = groups.remove(&line_id).unwrap();
-        if candidates.len() == 1 {
-            return candidates.remove(0);
-        }
-        let actual = vouchers_by_line.get(&line_id).map(|v| v.len()).unwrap_or(0);
-        if actual == 0 {
-            return candidates.remove(0);
-        }
-        let pos = candidates.iter().position(|c| expected_voucher_count(c) == actual);
-        candidates.remove(pos.unwrap_or(0))
-    }).collect()
+    order
+        .into_iter()
+        .map(|line_id| {
+            let mut candidates = groups.remove(&line_id).unwrap();
+            if candidates.len() == 1 {
+                return candidates.remove(0);
+            }
+            let actual = vouchers_by_line.get(&line_id).map(|v| v.len()).unwrap_or(0);
+            if actual == 0 {
+                return candidates.remove(0);
+            }
+            let pos = candidates
+                .iter()
+                .position(|c| expected_voucher_count(c) == actual);
+            candidates.remove(pos.unwrap_or(0))
+        })
+        .collect()
 }
 
 fn assemble_bill(
@@ -248,16 +266,24 @@ fn assemble_bill(
     vouchers_by_line: &mut HashMap<i32, Vec<VoucherRow>>,
 ) -> BillResponse {
     let lines = deduplicate_lines(lines, vouchers_by_line);
-    let bill_lines = lines.into_iter().map(|l| {
-        let vouchers = vouchers_by_line
-            .get(&l.line_id)
-            .cloned()
-            .unwrap_or_else(|| vec![])
-            .into_iter()
-            .map(voucher_row_to_response)
-            .collect();
-        BillLineResponse { id: l.line_id, service_id: l.service_id, quantity: l.quantity, vouchers }
-    }).collect();
+    let bill_lines = lines
+        .into_iter()
+        .map(|l| {
+            let vouchers = vouchers_by_line
+                .get(&l.line_id)
+                .cloned()
+                .unwrap_or_else(|| vec![])
+                .into_iter()
+                .map(voucher_row_to_response)
+                .collect();
+            BillLineResponse {
+                id: l.line_id,
+                service_id: l.service_id,
+                quantity: l.quantity,
+                vouchers,
+            }
+        })
+        .collect();
 
     BillResponse {
         id: bill.id,
@@ -299,7 +325,10 @@ pub async fn create_bill(
     let mut service_lines: Vec<(Service, i32)> = Vec::with_capacity(body.lines.len());
     for line_req in &body.lines {
         if line_req.quantity < 1 {
-            return Err(AppError::BadRequest(format!("Quantity must be at least 1 (got {})", line_req.quantity)));
+            return Err(AppError::BadRequest(format!(
+                "Quantity must be at least 1 (got {})",
+                line_req.quantity
+            )));
         }
         let service_row = sqlx::query_as::<_, ServiceRow>(
             r#"
@@ -316,7 +345,10 @@ pub async fn create_bill(
     }
 
     // 2. Compute total bill amount (price × quantity per line)
-    let total_amount: f64 = service_lines.iter().map(|(s, q)| s.price * (*q as f64)).sum();
+    let total_amount: f64 = service_lines
+        .iter()
+        .map(|(s, q)| s.price * (*q as f64))
+        .sum();
 
     // 3. Begin transaction
     let mut tx = state.db.begin().await?;
@@ -332,15 +364,19 @@ pub async fn create_bill(
     let number = next_bill_number(last_number.as_deref(), now.date_naive());
 
     // 5. Fetch billing address
-    let billing_address: String = sqlx::query_scalar(
-        "SELECT billing_address FROM billjobs_userprofile WHERE user_id = $1",
-    )
-    .bind(user.id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .unwrap_or_default();
+    let billing_address: String =
+        sqlx::query_scalar("SELECT billing_address FROM billjobs_userprofile WHERE user_id = $1")
+            .bind(user.id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .unwrap_or_default();
 
-    tracing::info!(number = &number, lines = service_lines.len(), "Creating bill");
+    tracing::info!(
+        number = &number,
+        lines = service_lines.len(),
+        user = user.id,
+        "Creating bill"
+    );
 
     // 6. Insert bill
     let bill_id: i32 = sqlx::query_scalar(
@@ -368,7 +404,11 @@ pub async fn create_bill(
         let line_total = service.price * (*quantity as f64);
         let total_vouchers = voucher_count * quantity;
 
-        tracing::info!(service=service.name, quantity=&quantity, "Creating voucher for {number}");
+        tracing::info!(
+            service = service.name,
+            quantity = &quantity,
+            "Creating voucher for {number}"
+        );
 
         let billline_id: i32 = sqlx::query_scalar(
             "INSERT INTO billjobs_billline (bill_id, service_id, quantity, total, note) VALUES ($1, $2, $3, $4, '') RETURNING id",
@@ -380,22 +420,26 @@ pub async fn create_bill(
         .fetch_one(&mut *tx)
         .await?;
 
-        let note = format!("{}_{}_{}", number, service.external_service_id, user.first_name);
+        let note = format!(
+            "{}_{}_{}",
+            number, service.external_service_id, user.first_name
+        );
 
-        let unify_vouchers = state
-            .unify
-            .create_vouchers(CreateVouchersRequest {
-                n: total_vouchers,
-                duration_hours,
-                note: note.clone(),
-                quota: 2,
-            })
-            .await
-            .map_err(|e| AppError::Unify(e.to_string()))?;
+        let mut line_vouchers: Vec<VoucherResponse> = Vec::new();
+        if total_vouchers > 0 {
+            let unify_vouchers = state
+                .unify
+                .create_vouchers(CreateVouchersRequest {
+                    n: total_vouchers,
+                    duration_hours,
+                    note: note.clone(),
+                    quota: 2,
+                })
+                .await
+                .map_err(|e| AppError::Unify(e.to_string()))?;
 
-        let mut line_vouchers: Vec<VoucherResponse> = Vec::with_capacity(unify_vouchers.len());
-        for uv in &unify_vouchers {
-            sqlx::query(
+            for uv in &unify_vouchers {
+                sqlx::query(
                 "INSERT INTO portal_voucher (unify_id, bill_id, billline_id, unify_create_time, code, created_at, duration, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Valid')",
             )
             .bind(&uv.unify_id)
@@ -408,13 +452,14 @@ pub async fn create_bill(
             .execute(&mut *tx)
             .await?;
 
-            line_vouchers.push(VoucherResponse {
-                unify_id: uv.unify_id.clone(),
-                code: format_code(&uv.code),
-                duration: uv.duration,
-                status: "Valid".to_string(),
-                active_days_count: 0,
-            });
+                line_vouchers.push(VoucherResponse {
+                    unify_id: uv.unify_id.clone(),
+                    code: format_code(&uv.code),
+                    duration: uv.duration,
+                    status: "Valid".to_string(),
+                    active_days_count: 0,
+                });
+            }
         }
 
         response_lines.push(BillLineResponse {
@@ -499,10 +544,13 @@ pub async fn list_bills(
     let mut lines_by_bill = fetch_lines_bulk(&state.db, &bill_ids).await?;
     let mut vouchers_by_line = fetch_vouchers_bulk(&state.db, &bill_ids).await?;
 
-    let data = bill_rows.into_iter().map(|bill| {
-        let lines = lines_by_bill.remove(&bill.id).unwrap_or_default();
-        assemble_bill(bill, lines, &mut vouchers_by_line)
-    }).collect();
+    let data = bill_rows
+        .into_iter()
+        .map(|bill| {
+            let lines = lines_by_bill.remove(&bill.id).unwrap_or_default();
+            assemble_bill(bill, lines, &mut vouchers_by_line)
+        })
+        .collect();
 
     Ok(Json(ListBillsResponse { total, data }))
 }

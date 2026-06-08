@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "coworker_portal=debug,info".parse().unwrap()),
+                .unwrap_or_else(|_| "coworker_portal=info".parse().unwrap()),
         )
         .init();
 
@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
         }
     };
 
-    tracing::info!(smtp_user=&config.smtp.clone().unwrap().username, smtp_pass=&config.smtp.clone().unwrap().password, "Config");
+    tracing::info!(smtp_user=&config.smtp.clone().unwrap().username, smtp_pass=&config.smtp.clone().unwrap().password, "Config SMTP");
 
     let superuser_session = auth::routes::acquire_django_session(
         &config.django_base_url,

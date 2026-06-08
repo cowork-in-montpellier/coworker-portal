@@ -545,7 +545,7 @@ pub async fn proxy_bill_pdf(state: &AppState, bill_id: i32) -> Result<Response, 
         Ok(response) => Ok(response),
         Err(_) => {
             // Session may have expired — try to re-acquire once
-            tracing::info!("Guest PDF: Django returned error, attempting session refresh");
+            tracing::warn!("Guest PDF: Django returned error, attempting session refresh");
             let new_session = acquire_django_session(
                 &state.config.django_base_url,
                 state.config.django_accept_invalid_certs,

@@ -97,7 +97,7 @@ struct CreateVoucherResponse {
 fn map_status(dto: &UnifyVoucherDto) -> VoucherStatus {
     // status_expires = 0 means the voucher hasn't been activated yet — not expired.
     // Only treat it as expired when Unify explicitly says so via the status string.
-    tracing::info!(voucher_id=&dto.id, voucher_status=&dto.status, "Mapping voucher status");
+    tracing::debug!(voucher_id=&dto.id, voucher_status=&dto.status, "Mapping voucher status");
     match dto.status.to_uppercase().as_str() {
         "VALID_ONE" | "VALID_MULTI" => VoucherStatus::Valid,
         "USED_MULTIPLE" | "EXPIRED" => VoucherStatus::Used,

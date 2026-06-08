@@ -102,7 +102,7 @@ export function Landing() {
                   type="text"
                   autoComplete="username"
                   autoFocus
-                  placeholder="your.username"
+                  placeholder="identifiant ou email"
                   className={`input input-bordered w-full ${errors.username ? 'input-error' : ''}`}
                   value={form.username}
                   onChange={e => setForm(f => ({ ...f, username: e.target.value }))}

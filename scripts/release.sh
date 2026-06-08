@@ -20,9 +20,15 @@ echo "==> Creating release archive..."
 STAGING=$(mktemp -d)
 trap 'rm -rf "$STAGING"' EXIT
 
+NGINX_DIR="${STAGING}/nginx"
+
+mkdir -p "${NGINX_DIR}"
+
 cp "target/${TARGET}/release/${BINARY_NAME}" "${STAGING}/"
 cp -r public "${STAGING}/public"
 cp -r install "${STAGING}/install"
+
+cp -r configuration/nginx/. "${NGINX_DIR}/"
 
 tar -czf "${ARCHIVE_NAME}" -C "${STAGING}" .
 

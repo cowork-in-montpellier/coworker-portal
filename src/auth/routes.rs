@@ -29,6 +29,7 @@ pub struct LoginResponse {
 #[derive(FromRow)]
 struct AuthUser {
     id: i32,
+    username: String,
     password: String,
     first_name: String,
 }
@@ -47,9 +48,9 @@ pub async fn login(
     State(state): State<AppState>,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, StatusCode> {
-    tracing::info!(username = &body.username, "login");
+    tracing::info!(identifier = &body.username, "Login attempt");
     let user = sqlx::query_as::<_, AuthUser>(
-        "SELECT id, password, first_name FROM auth_user WHERE username = $1 AND is_active = true",
+        "SELECT id, username, password, first_name FROM auth_user WHERE (username = $1 OR email = $1) AND is_active = true",
     )
     .bind(&body.username)
     .fetch_optional(&state.db)
@@ -58,12 +59,13 @@ pub async fn login(
     .ok_or(StatusCode::UNAUTHORIZED)?;
 
     if !verify_django_password(&body.password, &user.password) {
+        tracing::info!(identifier = &body.username, "Login refused");
         return Err(StatusCode::UNAUTHORIZED);
     }
 
     let token = state
         .jwt
-        .generate(user.id, &body.username, &user.first_name)
+        .generate(user.id, &user.username, &user.first_name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(LoginResponse { token }))
@@ -389,7 +391,7 @@ pub async fn acquire_django_session(
 
     let session = extract_cookie(post_res.headers(), "sessionid");
     match &session {
-        Some(_) => tracing::info!(username, "Django: session acquired successfully"),
+        Some(session) => tracing::info!(username, session, "Django: session acquired successfully"),
         None => tracing::warn!(
             username,
             post_status = %post_res.status(),
