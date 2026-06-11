@@ -6,8 +6,8 @@ pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 
-    #[error("Unify error: {0}")]
-    Unify(String),
+    #[error("External service error: {0}")]
+    External(String),
 
     #[error("Not found")]
     NotFound,
@@ -24,7 +24,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match &self {
             AppError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::Unify(_) => StatusCode::BAD_GATEWAY,
+            AppError::External(_) => StatusCode::BAD_GATEWAY,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,

@@ -4,30 +4,17 @@ use axum_swagger_ui::swagger_ui;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio_cron_scheduler::JobScheduler;
 use tower_http::services::{ServeDir, ServeFile};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 
-mod auth;
-mod caldav;
+mod calendar;
 mod config;
-mod domain;
 mod error;
+mod invoice;
 mod openapi;
-mod routes;
-mod tasks;
-mod unify;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db: sqlx::PgPool,
-    pub jwt: Arc<auth::jwt::JwtService>,
-    pub unify: Arc<dyn unify::UnifyClient>,
-    pub config: Arc<config::Config>,
-    /// Cached superuser Django session for guest bill PDF proxy.
-    /// Acquired at startup; refreshed on 403 responses.
-    pub superuser_session: Arc<RwLock<Option<String>>>,
-}
+mod users;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -42,73 +29,94 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    let config = config::Config::from_env()?;
+    let infra = config::InfraConfig::from_env()?;
+    let users_config = users::Config::from_env()?;
+    let invoice_config = invoice::Config::from_env()?;
+    let calendar_config = calendar::Config::from_env()?;
 
     let db = PgPoolOptions::new()
         .max_connections(5)
-        .connect(&config.database_url)
+        .connect(&infra.database_url)
         .await?;
 
     sqlx::migrate!("./migrations").run(&db).await?;
     tracing::info!("Migrations applied");
 
-    let unify_client: Arc<dyn unify::UnifyClient> = match config.unify.mode {
-        config::UnifyMode::Mock => {
+    let jwt = Arc::new(users::JwtService::new(
+        &users_config.jwt_secret,
+        users_config.jwt_expiry_hours,
+    ));
+
+    let users_state = users::State {
+        db: db.clone(),
+        jwt: jwt.clone(),
+        config: Arc::new(users_config),
+    };
+
+    let unify_client: Arc<dyn invoice::unify::UnifyClient> = match invoice_config.unify.mode {
+        invoice::config::UnifyMode::Mock => {
             tracing::info!("Unify: using mock client");
-            Arc::new(unify::mock::MockUnifyClient)
+            Arc::new(invoice::unify::mock::MockUnifyClient)
         }
-        config::UnifyMode::Real => {
-            tracing::info!("Unify: connecting to {}", config.unify.base_url);
-            Arc::new(unify::real::RealUnifyClient::new(&config.unify).await?)
+        invoice::config::UnifyMode::Real => {
+            tracing::info!("Unify: connecting to {}", invoice_config.unify.base_url);
+            Arc::new(invoice::unify::real::RealUnifyClient::new(&invoice_config.unify).await?)
         }
     };
 
-    tracing::info!(smtp_user=&config.smtp.clone().unwrap().username, smtp_pass=&config.smtp.clone().unwrap().password, "Config SMTP");
-
-    let superuser_session = auth::routes::acquire_django_session(
-        &config.django_base_url,
-        config.django_accept_invalid_certs,
-        &config.django_superuser_username,
-        &config.django_superuser_password,
+    let superuser_session = invoice::django_pdf::acquire_django_session(
+        &invoice_config.django_base_url,
+        invoice_config.django_accept_invalid_certs,
+        &invoice_config.django_superuser_username,
+        &invoice_config.django_superuser_password,
     )
     .await
-    .inspect_err(|e| tracing::warn!(error = %e, "Superuser Django session acquisition failed — guest PDF will be unavailable"))
+    .inspect_err(|e| tracing::warn!(error = %e, "Superuser Django session acquisition failed — invoice PDF will be unavailable"))
     .ok();
 
-    let state = AppState {
-        db,
-        jwt: Arc::new(auth::jwt::JwtService::new(
-            &config.jwt_secret,
-            config.jwt_expiry_hours,
-        )),
+    let billing_directory: Arc<dyn invoice::ports::BillingDirectory> =
+        Arc::new(users::adapters::PgBillingDirectory::new(db.clone()));
+
+    let invoice_state = invoice::State {
+        db: db.clone(),
+        jwt: jwt.clone(),
         unify: unify_client,
+        billing_directory,
         superuser_session: Arc::new(RwLock::new(superuser_session)),
-        config: Arc::new(config.clone()),
+        config: Arc::new(invoice_config),
     };
 
-    tasks::start(
-        state.clone(),
-        &config.voucher_sync_cron,
-        &config.monthly_usage_cron,
-        config.google_calendar_ical_url.as_deref(),
-        &config.google_calendar_sync_cron,
-        config.google_calendar_room_id,
-    ).await?;
+    let calendar_state = calendar::State {
+        db: db.clone(),
+        jwt: jwt.clone(),
+        config: Arc::new(calendar_config),
+    };
 
-    let (router, api) = OpenApiRouter::with_openapi(openapi::ApiDoc::openapi())
-        .nest("/api/auth", auth::router())
-        .nest("/api", routes::router())
+    let scheduler = JobScheduler::new().await?;
+    invoice::tasks::register(&scheduler, invoice_state.clone()).await?;
+    calendar::tasks::register(&scheduler, calendar_state.clone()).await?;
+    scheduler.start().await?;
+
+    let mut api_doc = openapi::ApiDoc::openapi();
+    api_doc.merge(users::openapi::ApiDoc::openapi());
+    api_doc.merge(invoice::openapi::ApiDoc::openapi());
+    api_doc.merge(calendar::openapi::ApiDoc::openapi());
+
+    let (router, api) = OpenApiRouter::with_openapi(api_doc)
+        .nest("/api/auth", users::routes::auth_router().with_state(users_state.clone()))
+        .nest("/api", users::routes::router().with_state(users_state))
+        .nest("/api", invoice::routes::router().with_state(invoice_state))
+        .nest("/api", calendar::routes::router().with_state(calendar_state))
         .split_for_parts();
 
     let app = router
         .route("/swagger", get(|| async { Html(swagger_ui("/api-docs/openapi.json"))}))
         .route("/api-docs/openapi.json", get(|| async move { Json(api) }))
-        .fallback_service(ServeDir::new("public").fallback(ServeFile::new("public/index.html")))
-        .with_state(state);
+        .fallback_service(ServeDir::new("public").fallback(ServeFile::new("public/index.html")));
 
-    let addr: std::net::SocketAddr = config.listen_addr.parse()?;
+    let addr: std::net::SocketAddr = infra.listen_addr.parse()?;
 
-    match (config.tls_cert_path.clone(), config.tls_key_path.clone()) {
+    match (infra.tls_cert_path.clone(), infra.tls_key_path.clone()) {
         (Some(cert), Some(key)) => {
             let tls_config = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key).await?;
             tracing::info!("Listening on https://{}", addr);
