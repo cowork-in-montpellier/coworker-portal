@@ -5,5 +5,5 @@
 *.cache
 *.tmp
 
-public/
+/public/
 coworker-portal-aarch64-unknown-linux-gnu.tar.gz
