@@ -24,7 +24,7 @@ function StatusBadge({ isPaid, date }: { isPaid: boolean; date: string }) {
 function SkeletonRow() {
   return (
     <tr>
-      {Array.from({ length: 6 }).map((_, i) => (
+      {Array.from({ length: 5 }).map((_, i) => (
         <td key={i}><div className="skeleton h-4 w-full" /></td>
       ))}
     </tr>
@@ -192,7 +192,6 @@ export function Dashboard() {
           <table className="table table-zebra w-full">
             <thead>
               <tr>
-                <th />
                 <th>Numéro</th>
                 <th>Date</th>
                 <th>Service(s)</th>
@@ -207,7 +206,7 @@ export function Dashboard() {
 
               {!loading && result?.data.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center text-base-content/40 py-12">
+                  <td colSpan={5} className="text-center text-base-content/40 py-12">
                     Aucune facture trouvée.
                   </td>
                 </tr>
@@ -216,15 +215,10 @@ export function Dashboard() {
               {!loading && result?.data.map(bill => {
                 const managedLines = bill.lines.filter(l => l.service_id != null)
                 const allUnmanaged = managedLines.length === 0
-                const serviceNames = managedLines
-                  .map(l => {
-                    const name = serviceMap.get(l.service_id!)?.name ?? '—'
-                    return l.quantity > 1 ? `${l.quantity}× ${name}` : name
-                  })
-                  .join(', ')
                 const expanded = expandedId === bill.id
                 const allVouchers = flattenVouchers(bill)
                 const hasVouchers = allVouchers.length > 0
+                const billStatuses = voucherStatuses.get(bill.id) ?? []
 
                 return (
                   <>
@@ -233,12 +227,48 @@ export function Dashboard() {
                       className={allUnmanaged ? 'opacity-50 italic' : 'hover cursor-pointer'}
                       onClick={() => hasVouchers && toggleExpand(bill.id)}
                     >
-                      <td className="w-6 text-base-content/30 text-xs">
-                        {hasVouchers ? (expanded ? '▾' : '▸') : null}
-                      </td>
                       <td className="font-mono">{bill.number}</td>
                       <td>{bill.date}</td>
-                      <td className="text-base-content/70">{allUnmanaged ? null : serviceNames}</td>
+                      <td>
+                        {hasVouchers ? (
+                          <div className="flex items-start gap-1.5">
+                            <svg
+                              className={`w-3.5 h-3.5 mt-0.5 text-base-content/50 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+                              viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
+                            >
+                              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                            </svg>
+                            <ul className="space-y-0.5">
+                              {managedLines.map(l => {
+                                const name = serviceMap.get(l.service_id!)?.name ?? '—'
+                                const label = l.quantity > 1 ? `${l.quantity}× ${name}` : name
+                                const validCount = l.vouchers.filter(v => {
+                                  const live = billStatuses.find(e => e.unify_id === v.unify_id)
+                                  return (live?.status ?? v.status) === 'Valid'
+                                }).length
+                                const totalCount = l.vouchers.length
+                                return (
+                                  <li key={l.id} className="flex items-center gap-2">
+                                    <span className="text-base-content/70">{label}</span>
+                                    {totalCount > 0 && (
+                                      <span className={`badge badge-xs ${validCount > 0 ? 'badge-info' : 'badge-ghost opacity-50'}`}>
+                                        {validCount}/{totalCount} valide{validCount !== 1 ? 's' : ''}
+                                      </span>
+                                    )}
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </div>
+                        ) : (
+                          <span className="text-base-content/70">
+                            {allUnmanaged ? null : managedLines.map(l => {
+                              const name = serviceMap.get(l.service_id!)?.name ?? '—'
+                              return l.quantity > 1 ? `${l.quantity}× ${name}` : name
+                            }).join(', ')}
+                          </span>
+                        )}
+                      </td>
                       <td className="text-right">{bill.amount.toFixed(2)} €</td>
                       <td>
                         <div className="flex items-center gap-2">
@@ -261,7 +291,6 @@ export function Dashboard() {
 
                     {expanded && hasVouchers && (
                       <tr key={`${bill.id}-vouchers`} className="bg-base-200/60">
-                        <td />
                         <td colSpan={5} className="py-4 px-4">
                           <div className="flex items-center gap-2 mb-3">
                             <span className="text-xs text-base-content/40 font-medium uppercase tracking-wide">Vouchers</span>
@@ -310,7 +339,7 @@ export function Dashboard() {
                                       const liveStatus = voucherStatuses.get(bill.id)?.find(s => s.unify_id === v.unify_id)
                                       const status = liveStatus?.status ?? null
                                       const isExpired = status === 'Expired' || status === 'Used'
-                                      const canRevoke = isMonthly && status === 'Valid' && isPastMonth(bill.date)
+                                      const canRevoke = isMonthly && isPastMonth(bill.date)
                                       return (
                                         <div
                                           key={v.unify_id}

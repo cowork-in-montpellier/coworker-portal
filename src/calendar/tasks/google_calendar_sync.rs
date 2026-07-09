@@ -31,6 +31,12 @@ pub async fn run(state: &State, ical_url: &str, room_id: i32) {
         }
     };
 
+    let today_start = Paris
+        .from_local_datetime(&Utc::now().with_timezone(&Paris).date_naive().and_time(NaiveTime::MIN))
+        .single()
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(Utc::now);
+
     let mut inserted = 0usize;
     let mut skipped = 0usize;
 
@@ -58,6 +64,11 @@ pub async fn run(state: &State, ical_url: &str, room_id: i32) {
             tracing::warn!(uid, "Google Calendar sync: event has no parseable end, skipping");
             continue;
         };
+
+        if end <= today_start {
+            skipped += 1;
+            continue;
+        }
 
         let result = sqlx::query(
             "INSERT INTO portal_room_booking (room_id, title, start_at, end_at, notes, google_uid) \
