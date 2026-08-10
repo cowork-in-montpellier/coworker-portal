@@ -52,7 +52,11 @@ pub async fn run(state: &State) {
 
     tracing::info!(total_guests = guests.len(), "Monthly usage diary: guests returned by Unify");
 
-    // 3. Keep only guests whose voucher_id is one of our monthly vouchers.
+    // 3. Drop sessions that have already ended — only currently active connections count for today.
+    let guests: Vec<_> = guests.into_iter().filter(|g| !g.expired).collect();
+    tracing::info!(active_guests = guests.len(), "Monthly usage diary: non-expired guests");
+
+    // 4. Keep only guests whose voucher_id is one of our monthly vouchers.
     //    Group by voucher_id, collecting distinct MACs to count connected devices.
     let mut by_voucher: HashMap<String, HashSet<String>> = HashMap::new();
     for guest in guests {
@@ -71,7 +75,7 @@ pub async fn run(state: &State) {
         return;
     }
 
-    // 4. Append today's date to active_days for each active voucher (idempotent — skip if already present).
+    // 5. Append today's date to active_days for each active voucher (idempotent — skip if already present).
     let today = chrono::Utc::now().with_timezone(&Paris).date_naive();
 
     let mut recorded = 0usize;

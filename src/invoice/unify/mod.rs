@@ -22,9 +22,18 @@ pub struct UnifyVoucher {
 }
 
 /// A guest device currently authorized via a voucher.
+#[allow(dead_code)]
 pub struct ActiveGuest {
-    pub voucher_id: String,  // unify_id (_id) of the voucher used
-    pub mac: String,         // device MAC address
+    pub voucher_id: String,         // unify_id (_id) of the voucher used
+    pub mac: String,                // device MAC address
+    pub authorized: bool,
+    pub expired: bool,
+    pub ip: Option<String>,
+    pub hostname: Option<String>,
+    pub minutes: Option<i32>,       // remaining authorized duration
+    pub authorized_by: Option<String>,
+    pub rx_bytes: Option<i64>,
+    pub tx_bytes: Option<i64>,
 }
 
 #[async_trait]

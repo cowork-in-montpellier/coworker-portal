@@ -1,4 +1,5 @@
 pub mod bills;
+pub mod connected;
 pub mod guest;
 pub mod services;
 pub mod status;
@@ -22,4 +23,5 @@ pub fn router() -> OpenApiRouter<State> {
         .routes(routes!(guest::get_guest_bill))
         .routes(routes!(guest::check_guest_vouchers))
         .routes(routes!(guest::guest_bill_pdf))
+        .routes(routes!(connected::connected_guests))
 }

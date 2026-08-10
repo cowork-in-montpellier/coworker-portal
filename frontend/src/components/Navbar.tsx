@@ -40,6 +40,7 @@ export function Navbar() {
         <nav className="flex items-center gap-1">
           {authenticated && navLink('/dashboard', 'Factures')}
           {navLink('/calendar', 'Calendrier')}
+          {navLink('/live', 'Live')}
         </nav>
       </div>
       <div className="navbar-end gap-3">

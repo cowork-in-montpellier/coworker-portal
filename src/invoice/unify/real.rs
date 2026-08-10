@@ -59,8 +59,27 @@ impl RealUnifyClient {
 
 #[derive(Deserialize, Debug)]
 struct GuestDto {
+    // #[serde(rename = "_id")] id: Option<String>,
     mac: String,
+    ip: Option<String>,
+    hostname: Option<String>,
+    // first_seen: Option<i64>,
+    // last_seen: Option<i64>,
+    // assoc_time: Option<i64>,
+    authorized: Option<bool>,
+    // authorized_at: Option<i64>,
+    authorized_by: Option<String>,
+    minutes: Option<i32>,
+    // name: Option<String>,
+    // start: Option<i64>,
+    // end: Option<i64>,
+    expired: Option<bool>,
     voucher_id: Option<String>,
+    // qos_rate_max_up: Option<i32>,
+    // qos_rate_max_down: Option<i32>,
+    // qos_usage_quota: Option<i32>,
+    rx_bytes: Option<i64>,
+    tx_bytes: Option<i64>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -204,12 +223,15 @@ impl UnifyClient for RealUnifyClient {
     }
 
     async fn get_active_guests(&self, within_hours: u32) -> Result<Vec<super::ActiveGuest>> {
-        let body = serde_json::json!({ "within": within_hours });
+        let end_ms = chrono::Utc::now().timestamp_millis();
+        let start_ms = end_ms - (within_hours as i64 * 3600 * 1000);
         let url = format!("{}/api/s/{}/stat/guest", self.base_url, self.site);
-        tracing::debug!(%url, within_hours, "Querying Unify active guests");
+        tracing::debug!(%url, within_hours, start_ms, end_ms, "Querying Unify active guests");
 
         let resp: GuestListResponse = self
-            .send_with_retry(|| self.client.post(&url).json(&body))
+            .send_with_retry(|| {
+                self.client.get(&url).query(&[("start", start_ms), ("end", end_ms)])
+            })
             .await?
             .json().await?;
 
@@ -218,8 +240,28 @@ impl UnifyClient for RealUnifyClient {
         let guests = resp.data.into_iter()
             .filter_map(|g| {
                 g.voucher_id.map(|vid| {
-                    tracing::debug!(mac = %g.mac, voucher_id = %vid, "Unify active guest");
-                    super::ActiveGuest { voucher_id: vid, mac: g.mac }
+                    tracing::debug!(
+                        mac = %g.mac,
+                        voucher_id = %vid,
+                        authorized = ?g.authorized,
+                        expired = ?g.expired,
+                        ip = ?g.ip,
+                        hostname = ?g.hostname,
+                        minutes = ?g.minutes,
+                        "Unify active guest",
+                    );
+                    super::ActiveGuest {
+                        voucher_id: vid,
+                        mac: g.mac,
+                        authorized: g.authorized.unwrap_or(false),
+                        expired: g.expired.unwrap_or(false),
+                        ip: g.ip,
+                        hostname: g.hostname,
+                        minutes: g.minutes,
+                        authorized_by: g.authorized_by,
+                        rx_bytes: g.rx_bytes,
+                        tx_bytes: g.tx_bytes,
+                    }
                 })
             })
             .collect();

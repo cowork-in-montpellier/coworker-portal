@@ -11,6 +11,7 @@ import { GuestBuy } from './pages/GuestBuy'
 import { GuestSummary } from './pages/GuestSummary'
 import { InviteMember } from './pages/InviteMember'
 import { Landing } from './pages/Landing'
+import { Live } from './pages/Live'
 import { Profile } from './pages/Profile'
 import { ResetPassword } from './pages/ResetPassword'
 
@@ -39,6 +40,7 @@ function App() {
         <Route path="/invite" element={<ProtectedRoute><InviteMember /></ProtectedRoute>} />
         <Route path="/accept-invite" element={<AcceptInvite />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/live" element={<Live />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

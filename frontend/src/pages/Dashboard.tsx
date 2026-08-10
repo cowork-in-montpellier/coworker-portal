@@ -250,8 +250,8 @@ export function Dashboard() {
                                 return (
                                   <li key={l.id} className="flex items-center gap-2">
                                     <span className="text-base-content/70">{label}</span>
-                                    {totalCount > 0 && (
-                                      <span className={`badge badge-xs ${validCount > 0 ? 'badge-info' : 'badge-ghost opacity-50'}`}>
+                                    {validCount > 0 && (
+                                      <span className="badge badge-xs badge-info">
                                         {validCount}/{totalCount} valide{validCount !== 1 ? 's' : ''}
                                       </span>
                                     )}
