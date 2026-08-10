@@ -7,6 +7,7 @@ use crate::users::jwt::JwtService;
 
 use super::config::Config;
 use super::ports::BillingDirectory;
+use super::sumup::SumUpClient;
 use super::unify::UnifyClient;
 
 #[derive(Clone)]
@@ -19,6 +20,7 @@ pub struct State {
     /// Acquired at startup; refreshed on failure.
     pub superuser_session: Arc<RwLock<Option<String>>>,
     pub config: Arc<Config>,
+    pub sumup: Option<Arc<SumUpClient>>,
 }
 
 impl HasJwt for State {

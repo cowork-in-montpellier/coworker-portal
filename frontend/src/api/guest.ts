@@ -30,6 +30,7 @@ export const GuestBillResponseSchema = z.object({
   amount: z.number(),
   is_paid: z.boolean(),
   lines: z.array(GuestBillLineSchema),
+  payment_url: z.string().nullable().optional(),
 })
 
 export type GuestBillResponse = z.infer<typeof GuestBillResponseSchema>

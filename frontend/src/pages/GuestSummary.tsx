@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useLocation, Link } from 'react-router-dom'
 import { Navbar } from '../components/Navbar'
 import {
   type GuestBillResponse,
@@ -13,6 +13,8 @@ import { useStatus } from '../hooks/useStatus'
 
 export function GuestSummary() {
   const { token } = useParams<{ token: string }>()
+  const location = useLocation()
+  const fromPayment = new URLSearchParams(location.search).has('from_payment')
   const [bill, setBill] = useState<GuestBillResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -20,12 +22,16 @@ export function GuestSummary() {
   const [checkingVouchers, setCheckingVouchers] = useState(false)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [downloadingInvoice, setDownloadingInvoice] = useState(false)
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false)
+  const [pollFailed, setPollFailed] = useState(false)
+  const pollAttemptsRef = useRef(0)
 
   useEffect(() => {
     if (!token) return
     getGuestBill(token)
       .then(b => {
         setBill(b)
+        if (b.is_paid) setPaymentConfirmed(true)
         const statusMap = new Map<string, string>()
         for (const line of b.lines) {
           for (const v of line.vouchers) {
@@ -34,9 +40,37 @@ export function GuestSummary() {
         }
         setVoucherStatuses(statusMap)
       })
-      .catch(() => setError('Impossible de charger la facture.'))
+      .catch(e => {
+        const is404 = e instanceof Error && e.message.includes('404')
+        setError(is404 ? '404' : 'Impossible de charger la facture.')
+      })
       .finally(() => setLoading(false))
   }, [token])
+
+  // Auto-poll is_paid when arriving from SumUp redirect
+  useEffect(() => {
+    if (!fromPayment || !token || paymentConfirmed) return
+    const MAX_ATTEMPTS = 10
+    const interval = setInterval(async () => {
+      pollAttemptsRef.current++
+      try {
+        const b = await getGuestBill(token)
+        if (b.is_paid) {
+          setBill(b)
+          setPaymentConfirmed(true)
+          clearInterval(interval)
+          return
+        }
+      } catch {
+        // ignore poll errors
+      }
+      if (pollAttemptsRef.current >= MAX_ATTEMPTS) {
+        setPollFailed(true)
+        clearInterval(interval)
+      }
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [fromPayment, token, paymentConfirmed])
 
   const handleCheckVouchers = async () => {
     if (!token) return
@@ -98,12 +132,72 @@ export function GuestSummary() {
   }
 
   if (error || !bill) {
+    const isCancelled = error === '404'
+    return (
+      <div className="min-h-screen bg-base-200 flex flex-col">
+        <Navbar />
+        <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
+          <div role="alert" className={`alert ${isCancelled ? 'alert-warning' : 'alert-error'}`}>
+            <div>
+              <p className="font-semibold">
+                {isCancelled ? 'Commande annulée' : 'Erreur'}
+              </p>
+              <p className="text-sm">
+                {isCancelled
+                  ? 'Le paiement a été annulé et la commande a été supprimée.'
+                  : (error ?? 'Facture introuvable.')}
+              </p>
+              {isCancelled && (
+                <Link to="/buy" className="btn btn-sm btn-outline mt-2">Recommencer</Link>
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // Waiting for payment confirmation — block content until webhook confirms
+  if (fromPayment && !paymentConfirmed && !pollFailed) {
+    return (
+      <div className="min-h-screen bg-base-200 flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center p-8">
+          <div className="card bg-base-100 shadow-sm max-w-sm w-full">
+            <div className="card-body p-6 items-center text-center gap-4">
+              <span className="loading loading-spinner loading-lg text-primary" />
+              <div>
+                <p className="font-semibold">Vérification du paiement en cours…</p>
+                <p className="text-sm text-base-content/50 mt-1">
+                  {bill.bill_number} · {bill.amount.toFixed(2)} €
+                </p>
+              </div>
+              <p className="text-xs text-base-content/40">
+                Cette page se mettra à jour automatiquement.
+              </p>
+            </div>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // Poll exhausted without confirmation
+  if (fromPayment && pollFailed) {
     return (
       <div className="min-h-screen bg-base-200 flex flex-col">
         <Navbar />
         <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
           <div role="alert" className="alert alert-error">
-            <span>{error ?? 'Facture introuvable.'}</span>
+            <div>
+              <p className="font-semibold">Paiement non confirmé</p>
+              <p className="text-sm mt-1">
+                Nous n'avons pas reçu la confirmation de votre paiement pour la facture{' '}
+                <span className="font-mono">{bill.bill_number}</span>.
+                Merci de vous rapprocher d'un coworker.
+              </p>
+              <Link to="/buy" className="btn btn-sm btn-outline mt-2">Recommencer</Link>
+            </div>
           </div>
         </main>
       </div>
@@ -152,7 +246,15 @@ export function GuestSummary() {
                 )}
               </div>
             </div>
-            {!bill.is_paid && (
+            {paymentConfirmed && (
+              <div role="alert" className="alert alert-success alert-soft">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-success h-6 w-6 shrink-0">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-bold text-base-content/70">Paiement confirmé, merci !</span>
+              </div>
+            )}
+            {!fromPayment && !bill.is_paid && (
               <div role="alert" className="alert alert-info alert-soft">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-info h-6 w-6 shrink-0">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

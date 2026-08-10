@@ -1,6 +1,7 @@
 use axum::{
     Json,
     extract::{Path, State},
+    http::StatusCode,
     response::Response,
 };
 use chrono::Utc;
@@ -15,6 +16,7 @@ use crate::invoice::domain::{Service, VoucherStatus, format_code, next_bill_numb
 use crate::invoice::repository;
 use crate::invoice::routes::vouchers::{VoucherCheckResponse, VoucherStatusResponse};
 use crate::invoice::state::State as InvoiceState;
+use crate::invoice::sumup::CheckoutStatus;
 use crate::invoice::unify::CreateVouchersRequest;
 
 // ─── Response types ───────────────────────────────────────────────────────────
@@ -49,6 +51,8 @@ pub struct GuestBillResponse {
     pub amount: f64,
     pub is_paid: bool,
     pub lines: Vec<GuestBillLineResponse>,
+    /// SumUp hosted checkout URL, present only when SumUp is enabled.
+    pub payment_url: Option<String>,
 }
 
 // ─── Request types ────────────────────────────────────────────────────────────
@@ -240,6 +244,36 @@ pub async fn create_guest_bill(
     // 10. Commit
     tx.commit().await?;
 
+    // 11. Optionally create a SumUp hosted checkout (non-fatal if it fails)
+    let payment_url = if let Some(sumup) = &state.sumup {
+        let redirect = format!(
+            "{}/buy/summary/{}?from_payment=1",
+            state.config.app_base_url, guest_token
+        );
+        let webhook = format!("{}/api/guest/payment/webhook", state.config.app_base_url);
+        match sumup.create_checkout(&guest_token.to_string(), &number, total_amount, &redirect, &webhook).await {
+            Ok(created) => {
+                if let Err(e) = sqlx::query(
+                    "UPDATE portal_guest_bill SET sumup_checkout_id = $1 WHERE guest_token = $2",
+                )
+                .bind(&created.checkout_id)
+                .bind(guest_token)
+                .execute(&state.db)
+                .await
+                {
+                    tracing::error!(error = %e, "Failed to store SumUp checkout_id");
+                }
+                Some(created.checkout_url)
+            }
+            Err(e) => {
+                tracing::error!(error = %e, bill_number = %number, "SumUp checkout creation failed — falling back to manual payment");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     Ok(Json(GuestBillResponse {
         guest_token: guest_token.to_string(),
         bill_id,
@@ -248,6 +282,7 @@ pub async fn create_guest_bill(
         amount: total_amount,
         is_paid: false,
         lines: response_lines,
+        payment_url,
     }))
 }
 
@@ -299,6 +334,7 @@ pub async fn get_guest_bill(
         amount: row.amount,
         is_paid: row.is_paid,
         lines,
+        payment_url: None,
     }))
 }
 
@@ -432,6 +468,103 @@ pub async fn check_guest_vouchers(
     }
 
     Ok(Json(VoucherCheckResponse { data }))
+}
+
+#[derive(Deserialize)]
+pub struct SumUpWebhookPayload {
+    pub id: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/guest/payment/webhook",
+    tag = "Guest",
+    responses(
+        (status = 200, description = "Webhook received"),
+    )
+)]
+pub async fn guest_payment_webhook(
+    State(state): State<InvoiceState>,
+    Json(body): Json<SumUpWebhookPayload>,
+) -> StatusCode {
+    let checkout_id = body.id.clone();
+    tokio::spawn(async move {
+        let Some(sumup) = &state.sumup else {
+            tracing::warn!(checkout_id, "Received SumUp webhook but SumUp is disabled");
+            return;
+        };
+
+        let status = match sumup.get_checkout(&checkout_id).await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!(checkout_id, error = %e, "Failed to verify SumUp checkout status");
+                return;
+            }
+        };
+
+        tracing::info!(checkout_id, ?status, "SumUp webhook: checkout status verified");
+
+        let bill_id: Option<i32> = sqlx::query_scalar(
+            "SELECT bill_id FROM portal_guest_bill WHERE sumup_checkout_id = $1",
+        )
+        .bind(&checkout_id)
+        .fetch_optional(&state.db)
+        .await
+        .unwrap_or(None);
+
+        let Some(bill_id) = bill_id else {
+            tracing::warn!(checkout_id, "SumUp webhook: no bill found for checkout_id");
+            return;
+        };
+
+        match status {
+            CheckoutStatus::Paid => {
+                if let Err(e) = sqlx::query(r#"UPDATE billjobs_bill SET "isPaid" = true WHERE id = $1"#)
+                    .bind(bill_id)
+                    .execute(&state.db)
+                    .await
+                {
+                    tracing::error!(bill_id, error = %e, "SumUp webhook: failed to mark bill as paid");
+                } else {
+                    tracing::info!(bill_id, checkout_id, "SumUp webhook: bill marked as paid");
+                }
+            }
+            CheckoutStatus::Failed => {
+                tracing::info!(bill_id, checkout_id, "SumUp webhook: payment failed — revoking vouchers and cleaning up");
+
+                let unify_ids: Vec<String> = sqlx::query_scalar(
+                    "SELECT unify_id FROM portal_voucher WHERE bill_id = $1",
+                )
+                .bind(bill_id)
+                .fetch_all(&state.db)
+                .await
+                .unwrap_or_default();
+
+                for unify_id in &unify_ids {
+                    if let Err(e) = state.unify.revoke_voucher(unify_id).await {
+                        tracing::error!(unify_id, error = %e, "SumUp webhook: failed to revoke Unify voucher");
+                    }
+                }
+
+                // Delete guest_bill link first (no FK cascade), then bill (cascades portal_voucher)
+                let _ = sqlx::query("DELETE FROM portal_guest_bill WHERE sumup_checkout_id = $1")
+                    .bind(&checkout_id)
+                    .execute(&state.db)
+                    .await;
+                let _ = sqlx::query("DELETE FROM billjobs_bill WHERE id = $1")
+                    .bind(bill_id)
+                    .execute(&state.db)
+                    .await;
+
+                tracing::info!(bill_id, checkout_id, vouchers = unify_ids.len(), "SumUp webhook: cleanup complete");
+            }
+            CheckoutStatus::Pending => {
+                tracing::debug!(checkout_id, "SumUp webhook: checkout still pending");
+            }
+        }
+    });
+
+    StatusCode::OK
 }
 
 #[utoipa::path(

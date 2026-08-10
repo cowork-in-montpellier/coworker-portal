@@ -11,6 +11,15 @@ pub struct Config {
     pub django_accept_invalid_certs: bool,
     pub django_superuser_username: String,
     pub django_superuser_password: String,
+    pub sumup: Option<SumUpConfig>,
+    pub app_base_url: String,
+}
+
+#[derive(Clone)]
+pub struct SumUpConfig {
+    pub api_key: String,
+    pub merchant_code: String,
+    pub base_url: String,
 }
 
 #[derive(Clone)]
@@ -50,6 +59,20 @@ impl Config {
                 .unwrap_or_default(),
             django_superuser_password: std::env::var("DJANGO_SUPERUSER_PASSWORD")
                 .unwrap_or_default(),
+            app_base_url: std::env::var("APP_BASE_URL")
+                .unwrap_or_else(|_| "http://localhost:3000".into()),
+            sumup: if std::env::var("SUMUP_ENABLED").as_deref() == Ok("true") {
+                Some(SumUpConfig {
+                    api_key: std::env::var("SUMUP_API_KEY")
+                        .context("SUMUP_API_KEY required when SUMUP_ENABLED=true")?,
+                    merchant_code: std::env::var("SUMUP_MERCHANT_CODE")
+                        .context("SUMUP_MERCHANT_CODE required when SUMUP_ENABLED=true")?,
+                    base_url: std::env::var("SUMUP_BASE_URL")
+                        .unwrap_or_else(|_| "https://api.sumup.com".into()),
+                })
+            } else {
+                None
+            },
             unify: UnifyConfig {
                 mode: if std::env::var("UNIFY_MOCK").as_deref() == Ok("true") {
                     UnifyMode::Mock

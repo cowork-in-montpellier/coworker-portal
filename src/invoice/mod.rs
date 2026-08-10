@@ -6,6 +6,7 @@ pub mod ports;
 pub mod repository;
 pub mod routes;
 pub mod state;
+pub mod sumup;
 pub mod tasks;
 pub mod unify;
 

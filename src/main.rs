@@ -77,6 +77,17 @@ async fn main() -> Result<()> {
     let billing_directory: Arc<dyn invoice::ports::BillingDirectory> =
         Arc::new(users::adapters::PgBillingDirectory::new(db.clone()));
 
+    let sumup_client = match &invoice_config.sumup {
+        Some(cfg) => {
+            tracing::info!("SumUp: enabled, merchant_code={}", cfg.merchant_code);
+            Some(Arc::new(invoice::sumup::SumUpClient::new(cfg)?))
+        }
+        None => {
+            tracing::info!("SumUp: disabled");
+            None
+        }
+    };
+
     let invoice_state = invoice::State {
         db: db.clone(),
         jwt: jwt.clone(),
@@ -84,6 +95,7 @@ async fn main() -> Result<()> {
         billing_directory,
         superuser_session: Arc::new(RwLock::new(superuser_session)),
         config: Arc::new(invoice_config),
+        sumup: sumup_client,
     };
 
     let calendar_state = calendar::State {

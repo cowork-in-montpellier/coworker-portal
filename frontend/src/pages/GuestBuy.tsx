@@ -125,7 +125,11 @@ export function GuestBuy() {
         billing_name: billingName || undefined,
         billing_address: billingAddress || undefined,
       })
-      navigate(`/buy/summary/${result.guest_token}`)
+      if (result.payment_url) {
+        window.location.href = result.payment_url
+      } else {
+        navigate(`/buy/summary/${result.guest_token}`)
+      }
     } catch (e) {
       const reason = e instanceof ApiError && e.status === 502
         ? 'Erreur lors de la création des vouchers. Merci de réessayer plus tard ou de contacter #commission-informatique sur Slack.'
