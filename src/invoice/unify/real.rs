@@ -55,6 +55,27 @@ impl RealUnifyClient {
             Ok(resp.error_for_status()?)
         }
     }
+
+    /// Fetch the MAC addresses of hotspot clients currently online.
+    async fn connected_macs(&self) -> Result<std::collections::HashSet<String>> {
+        let url = format!("{}/v2/api/site/{}/hotspot/clients", self.base_url, self.site);
+        tracing::debug!(%url, "Querying Unify hotspot clients");
+        let raw = self
+            .send_with_retry(|| self.client.get(&url).query(&[("withinHours", "24")]))
+            .await?;
+        let status = raw.status();
+        let body = raw.text().await?;
+        tracing::debug!(%status, body = %body, "Unify hotspot clients raw response");
+        let clients: Vec<HotspotClientDto> = serde_json::from_str(&body)
+            .map_err(|e| anyhow::anyhow!("hotspot/clients parse error: {e} — body: {body}"))?;
+        let online: std::collections::HashSet<String> = clients
+            .into_iter()
+            .filter(|c| c.status.as_deref() == Some("online"))
+            .map(|c| c.mac)
+            .collect();
+        tracing::debug!(total = online.len(), "Unify hotspot clients online");
+        Ok(online)
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -85,6 +106,12 @@ struct GuestDto {
 #[derive(Deserialize, Debug)]
 struct GuestListResponse {
     data: Vec<GuestDto>,
+}
+
+#[derive(Deserialize, Debug)]
+struct HotspotClientDto {
+    mac: String,
+    status: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -222,22 +249,30 @@ impl UnifyClient for RealUnifyClient {
         Ok(())
     }
 
-    async fn get_active_guests(&self, within_hours: u32) -> Result<Vec<super::ActiveGuest>> {
+    async fn get_active_guests(&self, window: chrono::Duration) -> Result<Vec<super::ActiveGuest>> {
         let end_ms = chrono::Utc::now().timestamp_millis();
-        let start_ms = end_ms - (within_hours as i64 * 3600 * 1000);
+        let start_ms = end_ms - window.num_milliseconds();
         let url = format!("{}/api/s/{}/stat/guest", self.base_url, self.site);
-        tracing::debug!(%url, within_hours, start_ms, end_ms, "Querying Unify active guests");
+        tracing::debug!(%url, window_secs = window.num_seconds(), start_ms, end_ms, "Querying Unify active guests");
 
-        let resp: GuestListResponse = self
-            .send_with_retry(|| {
-                self.client.get(&url).query(&[("start", start_ms), ("end", end_ms)])
-            })
-            .await?
-            .json().await?;
+        let (resp, connected) = tokio::try_join!(
+            async {
+                let r: GuestListResponse = self
+                    .send_with_retry(|| {
+                        self.client.get(&url).query(&[("start", start_ms), ("end", end_ms)])
+                    })
+                    .await?
+                    .json()
+                    .await?;
+                anyhow::Ok(r)
+            },
+            self.connected_macs(),
+        )?;
 
-        tracing::debug!(total = resp.data.len(), "Unify active guests response");
+        tracing::debug!(total = resp.data.len(), connected_stations = connected.len(), "Unify guests + stations response");
 
         let guests = resp.data.into_iter()
+            .filter(|g| connected.contains(&g.mac))
             .filter_map(|g| {
                 g.voucher_id.map(|vid| {
                     tracing::debug!(
@@ -248,7 +283,7 @@ impl UnifyClient for RealUnifyClient {
                         ip = ?g.ip,
                         hostname = ?g.hostname,
                         minutes = ?g.minutes,
-                        "Unify active guest",
+                        "Unify active guest (physically associated)",
                     );
                     super::ActiveGuest {
                         voucher_id: vid,

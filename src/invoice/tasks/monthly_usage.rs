@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use chrono::Timelike as _;
+use chrono::{Duration, Timelike as _};
 use chrono_tz::Europe::Paris;
 
 use crate::invoice::state::State;
@@ -42,7 +42,7 @@ pub async fn run(state: &State) {
     let within_hours = now_paris.hour() + 1;
     tracing::info!(within_hours, "Monthly usage diary: querying Unify guests since today midnight");
 
-    let guests = match state.unify.get_active_guests(within_hours).await {
+    let guests = match state.unify.get_active_guests(Duration::hours(within_hours as i64)).await {
         Ok(g) => g,
         Err(e) => {
             tracing::error!(error = %e, "Monthly usage diary: Unify guest query failed");

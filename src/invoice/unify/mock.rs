@@ -52,7 +52,7 @@ impl UnifyClient for MockUnifyClient {
         Ok(())
     }
 
-    async fn get_active_guests(&self, _within_hours: u32) -> Result<Vec<ActiveGuest>> {
+    async fn get_active_guests(&self, _window: chrono::Duration) -> Result<Vec<ActiveGuest>> {
         tracing::debug!("mock: get_active_guests — returning empty list");
         Ok(vec![])
     }
