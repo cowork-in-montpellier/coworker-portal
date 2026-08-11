@@ -4,7 +4,6 @@ pub mod real;
 use std::collections::HashMap;
 use anyhow::Result;
 use async_trait::async_trait;
-use chrono::Duration;
 
 use crate::invoice::domain::VoucherStatus;
 
@@ -22,19 +21,11 @@ pub struct UnifyVoucher {
     pub create_time: i64,    // Unix timestamp
 }
 
-/// A guest device currently authorized via a voucher.
-#[allow(dead_code)]
+/// A voucher currently in use by one or more physically-associated devices.
 pub struct ActiveGuest {
-    pub voucher_id: String,         // unify_id (_id) of the voucher used
-    pub mac: String,                // device MAC address
-    pub authorized: bool,
-    pub expired: bool,
-    pub ip: Option<String>,
-    pub hostname: Option<String>,
-    pub minutes: Option<i32>,       // remaining authorized duration
-    pub authorized_by: Option<String>,
-    pub rx_bytes: Option<i64>,
-    pub tx_bytes: Option<i64>,
+    pub voucher_id: String,
+    pub macs: Vec<String>,
+    pub minutes: Option<i32>,
 }
 
 #[async_trait]
@@ -50,9 +41,10 @@ pub trait UnifyClient: Send + Sync {
         unify_ids: &[String],
     ) -> Result<HashMap<String, VoucherStatus>>;
 
-    /// Fetch guest devices that connected via a voucher within the given duration.
-    /// Only returns guests that have a voucher_id (i.e. authorized via voucher).
-    async fn get_active_guests(&self, window: Duration) -> Result<Vec<ActiveGuest>>;
+    /// Fetch vouchers currently in use by physically-associated devices.
+    /// Uses a 30-day window (longest possible voucher) filtered by real-time AP association.
+    /// Returns one entry per voucher, grouping all connected MACs together.
+    async fn get_active_guests(&self) -> Result<Vec<ActiveGuest>>;
 
     /// Revoke (delete) a voucher on Unify by its `_id`.
     async fn revoke_voucher(&self, unify_id: &str) -> Result<()>;

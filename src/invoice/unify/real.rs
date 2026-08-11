@@ -61,7 +61,7 @@ impl RealUnifyClient {
         let url = format!("{}/v2/api/site/{}/hotspot/clients", self.base_url, self.site);
         tracing::debug!(%url, "Querying Unify hotspot clients");
         let raw = self
-            .send_with_retry(|| self.client.get(&url).query(&[("withinHours", "24")]))
+            .send_with_retry(|| self.client.get(&url).query(&[("withinHours", "1")]))
             .await?;
         let status = raw.status();
         let body = raw.text().await?;
@@ -80,27 +80,10 @@ impl RealUnifyClient {
 
 #[derive(Deserialize, Debug)]
 struct GuestDto {
-    // #[serde(rename = "_id")] id: Option<String>,
     mac: String,
-    ip: Option<String>,
-    hostname: Option<String>,
-    // first_seen: Option<i64>,
-    // last_seen: Option<i64>,
-    // assoc_time: Option<i64>,
-    authorized: Option<bool>,
-    // authorized_at: Option<i64>,
-    authorized_by: Option<String>,
     minutes: Option<i32>,
-    // name: Option<String>,
-    // start: Option<i64>,
-    // end: Option<i64>,
-    expired: Option<bool>,
     voucher_id: Option<String>,
-    // qos_rate_max_up: Option<i32>,
-    // qos_rate_max_down: Option<i32>,
-    // qos_usage_quota: Option<i32>,
-    rx_bytes: Option<i64>,
-    tx_bytes: Option<i64>,
+    expired: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -249,11 +232,11 @@ impl UnifyClient for RealUnifyClient {
         Ok(())
     }
 
-    async fn get_active_guests(&self, window: chrono::Duration) -> Result<Vec<super::ActiveGuest>> {
+    async fn get_active_guests(&self) -> Result<Vec<super::ActiveGuest>> {
         let end_ms = chrono::Utc::now().timestamp_millis();
-        let start_ms = end_ms - window.num_milliseconds();
+        let start_ms = end_ms - chrono::Duration::days(30).num_milliseconds();
         let url = format!("{}/api/s/{}/stat/guest", self.base_url, self.site);
-        tracing::debug!(%url, window_secs = window.num_seconds(), start_ms, end_ms, "Querying Unify active guests");
+        tracing::debug!(%url, start_ms, end_ms, "Querying Unify active guests (30-day window)");
 
         let (resp, connected) = tokio::try_join!(
             async {
@@ -271,36 +254,28 @@ impl UnifyClient for RealUnifyClient {
 
         tracing::debug!(total = resp.data.len(), connected_stations = connected.len(), "Unify guests + stations response");
 
-        let guests = resp.data.into_iter()
-            .filter(|g| connected.contains(&g.mac))
-            .filter_map(|g| {
-                g.voucher_id.map(|vid| {
-                    tracing::debug!(
-                        mac = %g.mac,
-                        voucher_id = %vid,
-                        authorized = ?g.authorized,
-                        expired = ?g.expired,
-                        ip = ?g.ip,
-                        hostname = ?g.hostname,
-                        minutes = ?g.minutes,
-                        "Unify active guest (physically associated)",
-                    );
+        // Group by voucher_id, collecting all MACs currently on the AP for each voucher.
+        let mut by_voucher: std::collections::HashMap<String, super::ActiveGuest> =
+            std::collections::HashMap::new();
+
+        for g in resp.data.into_iter()
+            .filter(|g| g.expired == false)
+            .filter(|g| connected.contains(&g.mac)) {
+            if let Some(vid) = g.voucher_id {
+                let entry = by_voucher.entry(vid.clone()).or_insert_with(|| {
+                    tracing::debug!(voucher_id = %vid, minutes = ?g.minutes, "Unify active voucher (physically associated)");
                     super::ActiveGuest {
                         voucher_id: vid,
-                        mac: g.mac,
-                        authorized: g.authorized.unwrap_or(false),
-                        expired: g.expired.unwrap_or(false),
-                        ip: g.ip,
-                        hostname: g.hostname,
+                        macs: vec![],
                         minutes: g.minutes,
-                        authorized_by: g.authorized_by,
-                        rx_bytes: g.rx_bytes,
-                        tx_bytes: g.tx_bytes,
                     }
-                })
-            })
-            .collect();
+                });
+                entry.macs.push(g.mac);
+            }
+        }
 
+        let guests: Vec<_> = by_voucher.into_values().collect();
+        tracing::debug!(active_vouchers = guests.len(), "Unify active guests grouped by voucher");
         Ok(guests)
     }
 }

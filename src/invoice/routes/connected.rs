@@ -1,7 +1,5 @@
 use axum::extract::State;
 use axum::Json;
-use chrono::{NaiveTime, TimeZone as _};
-use chrono_tz::Europe::Paris;
 use serde::Serialize;
 use sqlx::FromRow;
 use utoipa::ToSchema;
@@ -15,8 +13,7 @@ pub struct ConnectedAccountUser {
     pub username: String,
     pub first_name: String,
     pub voucher_unify_id: String,
-    pub mac: String,
-    pub ip: Option<String>,
+    pub macs: Vec<String>,
     pub minutes_remaining: Option<i32>,
 }
 
@@ -48,21 +45,8 @@ struct VoucherOwnerRow {
 pub async fn connected_guests(
     State(state): State<InvoiceState>,
 ) -> Result<Json<ConnectedGuestsResponse>, AppError> {
-    let now = chrono::Utc::now();
-    let today_paris = now.with_timezone(&Paris).date_naive();
-    let day_start_utc = Paris
-        .from_local_datetime(&today_paris.and_time(NaiveTime::MIN))
-        .single()
-        .map(|dt| dt.with_timezone(&chrono::Utc))
-        .unwrap_or(now);
-    let window = now - day_start_utc;
-
-    let all_guests = state.unify.get_active_guests(window).await
+    let active = state.unify.get_active_guests().await
         .map_err(|e| AppError::External(e.to_string()))?;
-
-    let active: Vec<_> = all_guests.into_iter()
-        .filter(|g| !g.expired)
-        .collect();
 
     if active.is_empty() {
         return Ok(Json(ConnectedGuestsResponse {
@@ -109,8 +93,7 @@ pub async fn connected_guests(
                 username: row.username.clone(),
                 first_name: row.first_name.clone(),
                 voucher_unify_id: guest.voucher_id.clone(),
-                mac: guest.mac.clone(),
-                ip: guest.ip.clone(),
+                macs: guest.macs.clone(),
                 minutes_remaining: guest.minutes,
             }),
             None => unknown_count += 1,

@@ -6,8 +6,7 @@ const ConnectedAccountUserSchema = z.object({
   username: z.string(),
   first_name: z.string(),
   voucher_unify_id: z.string(),
-  mac: z.string(),
-  ip: z.string().nullable(),
+  macs: z.array(z.string()),
   minutes_remaining: z.number().nullable(),
 })
 
