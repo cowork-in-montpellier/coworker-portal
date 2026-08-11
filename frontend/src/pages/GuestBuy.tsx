@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type Service, type VoucherSpec } from '../api/services'
-import { listGuestServices, createGuestBill } from '../api/guest'
-import { ApiError } from '../api/client'
+import { listGuestServices } from '../api/guest'
 import { Navbar } from '../components/Navbar'
 
 function voucherSpecLabel(spec: VoucherSpec): string {
@@ -84,7 +83,6 @@ export function GuestBuy() {
   const [quantities, setQuantities] = useState<Map<number, number>>(new Map())
   const [billingName, setBillingName] = useState('')
   const [billingAddress, setBillingAddress] = useState('')
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -112,32 +110,20 @@ export function GuestBuy() {
     })
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (quantities.size === 0) return
-
-    setSubmitting(true)
     setError(null)
-    try {
-      const lines = Array.from(quantities.entries()).map(([service_id, quantity]) => ({ service_id, quantity }))
-      const result = await createGuestBill({
+    const lines = Array.from(quantities.entries()).map(([service_id, quantity]) => ({ service_id, quantity }))
+    navigate('/buy/checkout', {
+      state: {
         lines,
-        billing_name: billingName || undefined,
-        billing_address: billingAddress || undefined,
-      })
-      if (result.payment_url) {
-        window.location.href = result.payment_url
-      } else {
-        navigate(`/buy/summary/${result.guest_token}`)
-      }
-    } catch (e) {
-      const reason = e instanceof ApiError && e.status === 502
-        ? 'Erreur lors de la création des vouchers. Merci de réessayer plus tard ou de contacter #commission-informatique sur Slack.'
-        : 'Veuillez réessayer.'
-      setError(`Erreur à la création de la facture\u00a0: ${reason}`)
-    } finally {
-      setSubmitting(false)
-    }
+        selectedServices,
+        billingName: billingName || undefined,
+        billingAddress: billingAddress || undefined,
+        total,
+      },
+    })
   }
 
   const allowsMultiple = (s: Service) =>
@@ -260,9 +246,9 @@ export function GuestBuy() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={quantities.size === 0 || submitting}
+                  disabled={quantities.size === 0}
                 >
-                  {submitting ? <span className="loading loading-spinner loading-sm" /> : 'Confirmer & acheter'}
+                  Confirmer
                 </button>
               </div>
             </div>

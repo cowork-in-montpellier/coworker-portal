@@ -8,6 +8,8 @@ use crate::invoice::state::State as InvoiceState;
 pub struct StatusResponse {
     /// Whether invoice PDF download is available (superuser Django session is active).
     pub invoice_available: bool,
+    /// Whether SumUp online payment is configured and available.
+    pub sumup_available: bool,
 }
 
 #[utoipa::path(
@@ -20,5 +22,6 @@ pub struct StatusResponse {
 )]
 pub async fn status(State(state): State<InvoiceState>) -> Json<StatusResponse> {
     let invoice_available = state.superuser_session.read().await.is_some();
-    Json(StatusResponse { invoice_available })
+    let sumup_available = state.config.sumup.is_some();
+    Json(StatusResponse { invoice_available, sumup_available })
 }

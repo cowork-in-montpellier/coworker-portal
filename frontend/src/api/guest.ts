@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ApiError } from './client'
 import { ServiceSchema } from './services'
 import type { VoucherStatusEntry } from './bills'
 
@@ -51,7 +52,7 @@ async function guestFetch<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   })
-  if (!res.ok) throw new Error(`API error ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status, `API error ${res.status}`)
   return res.json() as Promise<T>
 }
 
@@ -64,6 +65,7 @@ export interface CreateGuestBillRequest {
   lines: { service_id: number; quantity: number }[]
   billing_name?: string
   billing_address?: string
+  payment_method?: string
 }
 
 export async function createGuestBill(body: CreateGuestBillRequest): Promise<GuestBillResponse> {

@@ -72,6 +72,8 @@ pub struct CreateGuestBillRequest {
     pub billing_name: Option<String>,
     /// Optional billing address lines.
     pub billing_address: Option<String>,
+    /// "card" → trigger SumUp checkout; "on_site" or absent → skip SumUp, go direct to summary.
+    pub payment_method: Option<String>,
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -244,31 +246,35 @@ pub async fn create_guest_bill(
     // 10. Commit
     tx.commit().await?;
 
-    // 11. Optionally create a SumUp hosted checkout (non-fatal if it fails)
-    let payment_url = if let Some(sumup) = &state.sumup {
-        let redirect = format!(
-            "{}/buy/summary/{}?from_payment=1",
-            state.config.app_base_url, guest_token
-        );
-        let webhook = format!("{}/api/guest/payment/webhook", state.config.app_base_url);
-        match sumup.create_checkout(&guest_token.to_string(), &number, total_amount, &redirect, &webhook).await {
-            Ok(created) => {
-                if let Err(e) = sqlx::query(
-                    "UPDATE portal_guest_bill SET sumup_checkout_id = $1 WHERE guest_token = $2",
-                )
-                .bind(&created.checkout_id)
-                .bind(guest_token)
-                .execute(&state.db)
-                .await
-                {
-                    tracing::error!(error = %e, "Failed to store SumUp checkout_id");
+    // 11. Optionally create a SumUp hosted checkout when guest explicitly chose card payment
+    let payment_url = if body.payment_method.as_deref() == Some("card") {
+        if let Some(sumup) = &state.sumup {
+            let redirect = format!(
+                "{}/buy/summary/{}?from_payment=1",
+                state.config.app_base_url, guest_token
+            );
+            let webhook = format!("{}/api/guest/payment/webhook", state.config.app_base_url);
+            match sumup.create_checkout(&guest_token.to_string(), &number, total_amount, &redirect, &webhook).await {
+                Ok(created) => {
+                    if let Err(e) = sqlx::query(
+                        "UPDATE portal_guest_bill SET sumup_checkout_id = $1 WHERE guest_token = $2",
+                    )
+                    .bind(&created.checkout_id)
+                    .bind(guest_token)
+                    .execute(&state.db)
+                    .await
+                    {
+                        tracing::error!(error = %e, "Failed to store SumUp checkout_id");
+                    }
+                    Some(created.checkout_url)
                 }
-                Some(created.checkout_url)
+                Err(e) => {
+                    tracing::error!(error = %e, bill_number = %number, "SumUp checkout creation failed — falling back to manual payment");
+                    None
+                }
             }
-            Err(e) => {
-                tracing::error!(error = %e, bill_number = %number, "SumUp checkout creation failed — falling back to manual payment");
-                None
-            }
+        } else {
+            None
         }
     } else {
         None

@@ -8,6 +8,7 @@ import { CreateBill } from './pages/CreateBill'
 import { Dashboard } from './pages/Dashboard'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { GuestBuy } from './pages/GuestBuy'
+import { GuestCheckout } from './pages/GuestCheckout'
 import { GuestSummary } from './pages/GuestSummary'
 import { InviteMember } from './pages/InviteMember'
 import { Landing } from './pages/Landing'
@@ -33,6 +34,7 @@ function App() {
           element={<ProtectedRoute><CreateBill /></ProtectedRoute>}
         />
         <Route path="/buy" element={<GuestBuy />} />
+        <Route path="/buy/checkout" element={<GuestCheckout />} />
         <Route path="/buy/summary/:token" element={<GuestSummary />} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
