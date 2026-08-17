@@ -7,6 +7,7 @@ pub struct Config {
     pub unify: UnifyConfig,
     pub voucher_sync_cron: String,
     pub monthly_usage_cron: String,
+    pub occupancy_cron: String,
     pub django_base_url: String,
     pub django_accept_invalid_certs: bool,
     pub django_superuser_username: String,
@@ -51,6 +52,8 @@ impl Config {
                 .unwrap_or_else(|_| "0 0 9-19 * * 1-5".into()),
             monthly_usage_cron: std::env::var("MONTHLY_USAGE_CRON")
                 .unwrap_or_else(|_| "0 0 9-19 * * *".into()),
+            occupancy_cron: std::env::var("OCCUPANCY_CRON")
+                .unwrap_or_else(|_| "0 0 9-21 * * 1-5".into()),
             django_base_url: std::env::var("DJANGO_BASE_URL")
                 .unwrap_or_else(|_| "http://localhost:8000".into()),
             django_accept_invalid_certs: std::env::var("DJANGO_ACCEPT_INVALID_CERTS").as_deref()
