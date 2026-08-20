@@ -128,11 +128,9 @@ export function GuestBuy() {
 
   const allowsMultiple = (s: Service) =>
     s.voucher_spec.kind === 'Book' && s.voucher_spec.amount > 0
-  const singleServices = services.filter(s => !allowsMultiple(s))
-  const multiServices = services.filter(s => allowsMultiple(s))
+  const multiServices = services.filter(s => allowsMultiple(s)).sort((a, b) => a.price - b.price)
   const selectedServices = services.filter(s => quantities.has(s.id))
   const total = selectedServices.reduce((sum, s) => sum + s.price * (quantities.get(s.id) ?? 1), 0)
-  const hasBothColumns = singleServices.length > 0 && multiServices.length > 0
 
   return (
     <div className="min-h-screen bg-base-200 flex flex-col">
@@ -162,28 +160,11 @@ export function GuestBuy() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-            <div className={`grid gap-6 ${hasBothColumns ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
-              {singleServices.length > 0 && (
-                <div className="flex flex-col gap-3">
-                  <p className="text-xs font-medium text-base-content/40 uppercase tracking-wide">
-                    Accès mensuel
-                  </p>
-                  {singleServices.map(service => (
-                    <ServiceCard
-                      key={service.id}
-                      service={service}
-                      quantity={quantities.get(service.id) ?? 0}
-                      allowMultiple={false}
-                      onToggle={() => toggleService(service.id)}
-                      onChangeQty={q => changeQty(service.id, q)}
-                    />
-                  ))}
-                </div>
-              )}
+            <div className={`grid gap-6 grid-cols-1`}>
               {multiServices.length > 0 && (
                 <div className="flex flex-col gap-3">
                   <p className="text-xs font-medium text-base-content/40 uppercase tracking-wide">
-                    Carnets de vouchers
+                    Vouchers
                   </p>
                   {multiServices.map(service => (
                     <ServiceCard
