@@ -2,6 +2,31 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PaymentMethod {
+    Card,
+    OnSite,
+}
+
+impl PaymentMethod {
+    pub fn as_str(&self) -> &str {
+        match self {
+            PaymentMethod::Card => "card",
+            PaymentMethod::OnSite => "on_site",
+        }
+    }
+}
+
+impl From<&str> for PaymentMethod {
+    fn from(s: &str) -> Self {
+        match s {
+            "card" => PaymentMethod::Card,
+            _ => PaymentMethod::OnSite,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct Service {
     pub id: i32,

@@ -15,6 +15,7 @@ pub struct ProfileResponse {
     pub last_name: String,
     pub email: String,
     pub billing_address: String,
+    pub onsite_payment: bool,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -23,6 +24,7 @@ pub struct UpdateProfileRequest {
     pub last_name: String,
     pub email: String,
     pub billing_address: String,
+    pub onsite_payment: Option<bool>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -39,15 +41,18 @@ struct ProfileRow {
     last_name: String,
     email: String,
     billing_address: Option<String>,
+    onsite_payment: bool,
 }
 
 async fn fetch_profile(db: &sqlx::PgPool, user_id: i32) -> Result<ProfileResponse, AppError> {
     let row = sqlx::query_as::<_, ProfileRow>(
         r#"
         SELECT u.id, u.username, u.first_name, u.last_name, u.email,
-               p.billing_address
+               p.billing_address,
+               COALESCE(s.onsite_payment, false) AS onsite_payment
         FROM auth_user u
         LEFT JOIN billjobs_userprofile p ON p.user_id = u.id
+        LEFT JOIN portal_user_settings s ON s.user_id = u.id
         WHERE u.id = $1
         "#,
     )
@@ -63,6 +68,7 @@ async fn fetch_profile(db: &sqlx::PgPool, user_id: i32) -> Result<ProfileRespons
         last_name: row.last_name,
         email: row.email,
         billing_address: row.billing_address.unwrap_or_default(),
+        onsite_payment: row.onsite_payment,
     })
 }
 
@@ -129,6 +135,20 @@ pub async fn update_profile(
     .bind(body.billing_address.trim())
     .execute(&state.db)
     .await?;
+
+    if let Some(onsite_payment) = body.onsite_payment {
+        sqlx::query(
+            r#"
+            INSERT INTO portal_user_settings (user_id, onsite_payment)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id) DO UPDATE SET onsite_payment = EXCLUDED.onsite_payment
+            "#,
+        )
+        .bind(user.id)
+        .bind(onsite_payment)
+        .execute(&state.db)
+        .await?;
+    }
 
     Ok(Json(fetch_profile(&state.db, user.id).await?))
 }

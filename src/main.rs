@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
     let users_state = users::State {
         db: db.clone(),
         jwt: jwt.clone(),
-        config: Arc::new(users_config),
+        config: Arc::new(users_config.clone()),
     };
 
     let unify_client: Arc<dyn invoice::unify::UnifyClient> = match invoice_config.unify.mode {
@@ -96,6 +96,7 @@ async fn main() -> Result<()> {
         superuser_session: Arc::new(RwLock::new(superuser_session)),
         config: Arc::new(invoice_config),
         sumup: sumup_client,
+        smtp: users_config.smtp.clone(),
     };
 
     let calendar_state = calendar::State {

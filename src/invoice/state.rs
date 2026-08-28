@@ -21,6 +21,7 @@ pub struct State {
     pub superuser_session: Arc<RwLock<Option<String>>>,
     pub config: Arc<Config>,
     pub sumup: Option<Arc<SumUpClient>>,
+    pub smtp: Option<crate::users::email::SmtpConfig>,
 }
 
 impl HasJwt for State {

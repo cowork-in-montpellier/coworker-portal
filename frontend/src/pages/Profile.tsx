@@ -14,6 +14,7 @@ export function Profile() {
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [billingAddress, setBillingAddress] = useState('')
+  const [onsitePayment, setOnsitePayment] = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
 
   const [currentPassword, setCurrentPassword] = useState('')
@@ -40,6 +41,7 @@ export function Profile() {
         setLastName(p.last_name)
         setEmail(p.email)
         setBillingAddress(p.billing_address)
+        setOnsitePayment(p.onsite_payment)
       })
       .catch(() => notify('Impossible de charger le profil.', 'error'))
       .finally(() => setLoading(false))
@@ -55,6 +57,7 @@ export function Profile() {
         last_name: lastName,
         email,
         billing_address: billingAddress,
+        onsite_payment: onsitePayment,
       })
       setProfile(updated)
       notify('Informations mises à jour.', 'success')
@@ -150,6 +153,20 @@ export function Profile() {
                       value={billingAddress}
                       onChange={e => setBillingAddress(e.target.value)}
                     />
+                  </div>
+                  <div className="form-control">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input
+                        type="checkbox"
+                        className="toggle toggle-sm"
+                        checked={onsitePayment}
+                        onChange={e => setOnsitePayment(e.target.checked)}
+                      />
+                      <div>
+                        <span className="label-text">Paiement sur place</span>
+                        <p className="text-xs text-base-content/40 mt-0.5">Vous savez faire payer via le lecteur de carte SumUp une facture</p>
+                      </div>
+                    </label>
                   </div>
                   <div className="card-actions justify-end">
                     <button type="submit" className="btn btn-primary btn-sm" disabled={savingProfile}>

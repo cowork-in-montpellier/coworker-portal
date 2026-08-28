@@ -1,20 +1,206 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useLocation, Link } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/Navbar'
 import {
   type GuestBillResponse,
   checkGuestVouchers,
   downloadGuestBillPdf,
   getGuestBill,
+  getGuestPaymentStatus,
+  switchToCardPayment,
 } from '../api/guest'
 import type { VoucherStatusEntry } from '../api/bills'
 import { generateVoucherPdf } from '../components/VoucherPdf'
 import { useStatus } from '../hooks/useStatus'
 
+// ── Payment sub-components ────────────────────────────────────────────────────
+
+function CardPaymentWaiting({ token, onPaid }: { token: string; onPaid: () => void }) {
+  const [confirmed, setConfirmed] = useState(false)
+  const [exhausted, setExhausted] = useState(false)
+  const attemptsRef = useRef(0)
+  const MAX_ATTEMPTS = 75
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      attemptsRef.current++
+      try {
+        const b = await getGuestBill(token)
+        if (b.is_paid) {
+          setConfirmed(true)
+          onPaid()
+          clearInterval(interval)
+          return
+        }
+      } catch { /* ignore poll errors */ }
+      if (attemptsRef.current >= MAX_ATTEMPTS) {
+        setExhausted(true)
+        clearInterval(interval)
+      }
+    }, 4000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  if (confirmed) {
+    return (
+      <div role="alert" className="alert alert-success alert-soft">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-success h-6 w-6 shrink-0">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span className="text-sm font-bold text-base-content/70">Paiement confirmé, merci !</span>
+      </div>
+    )
+  }
+  if (exhausted) {
+    return (
+      <div role="alert" className="alert alert-warning">
+        <div>
+          <p className="font-semibold text-sm">Paiement non confirmé</p>
+          <p className="text-sm mt-1">Nous n'avons pas encore reçu la confirmation bancaire. Merci de vous rapprocher d'un coworker.</p>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <span className="loading loading-spinner loading-sm text-primary" />
+      <p className="text-sm text-base-content/60">En attente de la confirmation bancaire…</p>
+    </div>
+  )
+}
+
+function OnsitePaymentWaiting({
+  token,
+  checkoutFailed,
+  onPaid,
+}: {
+  token: string
+  checkoutFailed: boolean
+  onPaid: () => void
+}) {
+  const [confirmed, setConfirmed] = useState(false)
+  const [exhausted, setExhausted] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [switchError, setSwitchError] = useState<string | null>(null)
+  const attemptsRef = useRef(0)
+  const MAX_ATTEMPTS = 150
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      attemptsRef.current++
+      try {
+        const status = await getGuestPaymentStatus(token)
+        if (status.paid) {
+          setConfirmed(true)
+          onPaid()
+          clearInterval(interval)
+          return
+        }
+      } catch { /* ignore poll errors */ }
+      if (attemptsRef.current >= MAX_ATTEMPTS) {
+        setExhausted(true)
+        clearInterval(interval)
+      }
+    }, 4000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token])
+
+  const handleSwitchToCard = async () => {
+    setSwitching(true)
+    setSwitchError(null)
+    try {
+      const { payment_url } = await switchToCardPayment(token)
+      window.location.href = payment_url
+    } catch {
+      setSwitchError("Le paiement par carte n'est pas disponible pour le moment.")
+      setSwitching(false)
+    }
+  }
+
+  if (confirmed) {
+    return (
+      <div role="alert" className="alert alert-success alert-soft">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-success h-6 w-6 shrink-0">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span className="text-sm font-bold text-base-content/70">Paiement confirmé, merci !</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {checkoutFailed && (
+        <div role="alert" className="alert alert-warning py-2 px-3">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-warning h-5 w-5 shrink-0">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <p className="text-sm">Une erreur s'est produite lors du paiement par carte. Votre commande est confirmée — merci de régler sur place auprès d'un coworker.</p>
+        </div>
+      )}
+      {exhausted ? (
+        <div role="alert" className="alert alert-info alert-soft">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-info h-6 w-6 shrink-0">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-sm font-bold text-base-content/50">Le délai d'attente est écoulé. Merci de vous rapprocher d'un coworker pour effectuer le paiement.</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <span className="loading loading-spinner loading-sm text-primary" />
+          <p className="text-sm text-base-content/60">Trouvez un coworker pour régler votre facture.</p>
+        </div>
+      )}
+      {switchError && (
+        <div role="alert" className="alert alert-error py-2 px-3">
+          <span className="text-sm">{switchError}</span>
+        </div>
+      )}
+      <button
+        type="button"
+        className="btn btn-outline btn-sm w-full"
+        disabled={switching}
+        onClick={handleSwitchToCard}
+      >
+        {switching
+          ? <span className="loading loading-spinner loading-xs" />
+          : '💳 Payer par carte en ligne'}
+      </button>
+    </div>
+  )
+}
+
+function PaymentPanel({
+  bill,
+  token,
+  onPaid,
+}: {
+  bill: GuestBillResponse
+  token: string
+  onPaid: () => void
+}) {
+  if (bill.is_paid) {
+    return (
+      <div role="alert" className="alert alert-success alert-soft">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-success h-6 w-6 shrink-0">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span className="text-sm font-bold text-base-content/70">Paiement confirmé, merci !</span>
+      </div>
+    )
+  }
+  if (bill.payment_method === 'card') {
+    return <CardPaymentWaiting token={token} onPaid={onPaid} />
+  }
+  return <OnsitePaymentWaiting token={token} checkoutFailed={bill.checkout_failed} onPaid={onPaid} />
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function GuestSummary() {
   const { token } = useParams<{ token: string }>()
-  const location = useLocation()
-  const fromPayment = new URLSearchParams(location.search).has('from_payment')
   const [bill, setBill] = useState<GuestBillResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -22,16 +208,12 @@ export function GuestSummary() {
   const [checkingVouchers, setCheckingVouchers] = useState(false)
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [downloadingInvoice, setDownloadingInvoice] = useState(false)
-  const [paymentConfirmed, setPaymentConfirmed] = useState(false)
-  const [pollFailed, setPollFailed] = useState(false)
-  const pollAttemptsRef = useRef(0)
 
   useEffect(() => {
     if (!token) return
     getGuestBill(token)
       .then(b => {
         setBill(b)
-        if (b.is_paid) setPaymentConfirmed(true)
         const statusMap = new Map<string, string>()
         for (const line of b.lines) {
           for (const v of line.vouchers) {
@@ -46,31 +228,6 @@ export function GuestSummary() {
       })
       .finally(() => setLoading(false))
   }, [token])
-
-  // Auto-poll is_paid when arriving from SumUp redirect
-  useEffect(() => {
-    if (!fromPayment || !token || paymentConfirmed) return
-    const MAX_ATTEMPTS = 10
-    const interval = setInterval(async () => {
-      pollAttemptsRef.current++
-      try {
-        const b = await getGuestBill(token)
-        if (b.is_paid) {
-          setBill(b)
-          setPaymentConfirmed(true)
-          clearInterval(interval)
-          return
-        }
-      } catch {
-        // ignore poll errors
-      }
-      if (pollAttemptsRef.current >= MAX_ATTEMPTS) {
-        setPollFailed(true)
-        clearInterval(interval)
-      }
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [fromPayment, token, paymentConfirmed])
 
   const handleCheckVouchers = async () => {
     if (!token) return
@@ -157,53 +314,6 @@ export function GuestSummary() {
     )
   }
 
-  // Waiting for payment confirmation — block content until webhook confirms
-  if (fromPayment && !paymentConfirmed && !pollFailed) {
-    return (
-      <div className="min-h-screen bg-base-200 flex flex-col">
-        <Navbar />
-        <main className="flex-1 flex items-center justify-center p-8">
-          <div className="card bg-base-100 shadow-sm max-w-sm w-full">
-            <div className="card-body p-6 items-center text-center gap-4">
-              <span className="loading loading-spinner loading-lg text-primary" />
-              <div>
-                <p className="font-semibold">Vérification du paiement en cours…</p>
-                <p className="text-sm text-base-content/50 mt-1">
-                  {bill.bill_number} · {bill.amount.toFixed(2)} €
-                </p>
-              </div>
-              <p className="text-xs text-base-content/40">
-                Cette page se mettra à jour automatiquement.
-              </p>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
-  // Poll exhausted without confirmation
-  if (fromPayment && pollFailed) {
-    return (
-      <div className="min-h-screen bg-base-200 flex flex-col">
-        <Navbar />
-        <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
-          <div role="alert" className="alert alert-error">
-            <div>
-              <p className="font-semibold">Paiement non confirmé</p>
-              <p className="text-sm mt-1">
-                Nous n'avons pas reçu la confirmation de votre paiement pour la facture{' '}
-                <span className="font-mono">{bill.bill_number}</span>.
-                Merci de vous rapprocher d'un coworker.
-              </p>
-              <Link to="/buy" className="btn btn-sm btn-outline mt-2">Recommencer</Link>
-            </div>
-          </div>
-        </main>
-      </div>
-    )
-  }
-
   return (
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
@@ -217,7 +327,7 @@ export function GuestSummary() {
         </div>
 
         {/* Bill summary card */}
-        <div className="card bg-base-100 shadow-sm mb-6">
+        <div className="card bg-base-100 shadow-sm mb-4">
           <div className="card-body p-4 gap-2">
             <div className="flex items-start justify-between">
               <div>
@@ -246,24 +356,21 @@ export function GuestSummary() {
                 )}
               </div>
             </div>
-            {paymentConfirmed && (
-              <div role="alert" className="alert alert-success alert-soft">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-success h-6 w-6 shrink-0">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-sm font-bold text-base-content/70">Paiement confirmé, merci !</span>
-              </div>
-            )}
-            {!fromPayment && !bill.is_paid && (
-              <div role="alert" className="alert alert-info alert-soft">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-info h-6 w-6 shrink-0">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-sm font-bold text-base-content/50 mt-1">Merci de vous rapprocher d'un coworker pour effectuer le paiement de votre commande.</span>
-              </div>
-            )}
           </div>
         </div>
+
+        {/* Payment panel */}
+        {token && (
+          <div className="card bg-base-100 shadow-sm mb-4">
+            <div className="card-body p-4">
+              <PaymentPanel
+                bill={bill}
+                token={token}
+                onPaid={() => setBill(b => b ? { ...b, is_paid: true } : b)}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Vouchers */}
         <div className="card bg-base-100 shadow-sm">

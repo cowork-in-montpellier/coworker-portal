@@ -8,6 +8,7 @@ const ProfileSchema = z.object({
   last_name: z.string(),
   email: z.string(),
   billing_address: z.string(),
+  onsite_payment: z.boolean(),
 })
 
 export type Profile = z.infer<typeof ProfileSchema>
@@ -20,6 +21,7 @@ export const updateProfile = (body: {
   last_name: string
   email: string
   billing_address: string
+  onsite_payment?: boolean
 }) =>
   apiFetch<unknown>('/api/profile', {
     method: 'PUT',

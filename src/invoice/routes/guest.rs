@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::invoice::django_pdf::proxy_bill_pdf;
-use crate::invoice::domain::{Service, VoucherStatus, format_code, next_bill_number, resolve_voucher_params};
+use crate::invoice::domain::{PaymentMethod, Service, VoucherStatus, format_code, next_bill_number, resolve_voucher_params};
 use crate::invoice::repository;
 use crate::invoice::routes::vouchers::{VoucherCheckResponse, VoucherStatusResponse};
 use crate::invoice::state::State as InvoiceState;
@@ -50,9 +50,17 @@ pub struct GuestBillResponse {
     pub date: String,
     pub amount: f64,
     pub is_paid: bool,
+    pub payment_method: PaymentMethod,
+    pub checkout_failed: bool,
     pub lines: Vec<GuestBillLineResponse>,
-    /// SumUp hosted checkout URL, present only when SumUp is enabled.
+    /// SumUp hosted checkout URL, present only on create when card checkout succeeds.
     pub payment_url: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PaymentStatusResponse {
+    pub paid: bool,
+    pub amount: Option<f64>,
 }
 
 // ─── Request types ────────────────────────────────────────────────────────────
@@ -68,12 +76,14 @@ fn default_quantity() -> i32 { 1 }
 #[derive(Deserialize, ToSchema)]
 pub struct CreateGuestBillRequest {
     pub lines: Vec<CreateGuestBillLineRequest>,
+    /// Guest's email address — required, used to send the order confirmation.
+    pub guest_email: String,
     /// Optional customer name — prepended to billing_address so it appears in the Django-generated PDF.
     pub billing_name: Option<String>,
     /// Optional billing address lines.
     pub billing_address: Option<String>,
-    /// "card" → trigger SumUp checkout; "on_site" or absent → skip SumUp, go direct to summary.
-    pub payment_method: Option<String>,
+    /// "card" → trigger SumUp checkout; "on_site" or absent → skip SumUp.
+    pub payment_method: Option<PaymentMethod>,
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -109,6 +119,9 @@ pub async fn create_guest_bill(
 ) -> Result<Json<GuestBillResponse>, AppError> {
     if body.lines.is_empty() {
         return Err(AppError::BadRequest("At least one line is required".into()));
+    }
+    if body.guest_email.is_empty() || !body.guest_email.contains('@') {
+        return Err(AppError::BadRequest("A valid email address is required".into()));
     }
 
     let now = Utc::now();
@@ -175,10 +188,12 @@ pub async fn create_guest_bill(
     .fetch_one(&mut *tx)
     .await?;
 
-    // 8. Link bill to guest token
-    sqlx::query("INSERT INTO portal_guest_bill (guest_token, bill_id) VALUES ($1, $2)")
+    // 8. Link bill to guest token (default to on_site; updated below if card checkout succeeds)
+    sqlx::query("INSERT INTO portal_guest_bill (guest_token, bill_id, payment_method, guest_email) VALUES ($1, $2, $3, $4)")
         .bind(guest_token)
         .bind(bill_id)
+        .bind(PaymentMethod::OnSite.as_str())
+        .bind(&body.guest_email)
         .execute(&mut *tx)
         .await?;
 
@@ -247,38 +262,39 @@ pub async fn create_guest_bill(
     tx.commit().await?;
 
     // 11. Optionally create a SumUp hosted checkout when guest explicitly chose card payment
-    let payment_url = if body.payment_method.as_deref() == Some("card") {
-        if let Some(sumup) = &state.sumup {
-            let redirect = format!(
-                "{}/buy/summary/{}?from_payment=1",
-                state.config.app_base_url, guest_token
-            );
-            let webhook = format!("{}/api/guest/payment/webhook", state.config.app_base_url);
-            match sumup.create_checkout(&guest_token.to_string(), &number, total_amount, &redirect, &webhook).await {
-                Ok(created) => {
-                    if let Err(e) = sqlx::query(
-                        "UPDATE portal_guest_bill SET sumup_checkout_id = $1 WHERE guest_token = $2",
-                    )
-                    .bind(&created.checkout_id)
-                    .bind(guest_token)
-                    .execute(&state.db)
-                    .await
-                    {
-                        tracing::error!(error = %e, "Failed to store SumUp checkout_id");
-                    }
-                    Some(created.checkout_url)
+    let wants_card = matches!(body.payment_method, Some(PaymentMethod::Card));
+    let (payment_url, resolved_method, checkout_failed) = if wants_card && state.sumup.is_some() {
+        match provision_sumup_checkout(&state, guest_token, &number, total_amount).await {
+            Ok(url) => (Some(url), PaymentMethod::Card, false),
+            Err(e) => {
+                tracing::error!(error = %e, bill_number = %number, "SumUp checkout creation failed — falling back to on-site");
+                if let Err(e) = sqlx::query(
+                    "UPDATE portal_guest_bill SET checkout_failed = true WHERE guest_token = $1",
+                )
+                .bind(guest_token)
+                .execute(&state.db)
+                .await
+                {
+                    tracing::error!(error = %e, "Failed to set checkout_failed");
                 }
-                Err(e) => {
-                    tracing::error!(error = %e, bill_number = %number, "SumUp checkout creation failed — falling back to manual payment");
-                    None
-                }
+                (None, PaymentMethod::OnSite, true)
             }
-        } else {
-            None
         }
     } else {
-        None
+        (None, PaymentMethod::OnSite, false)
     };
+
+    // 12. Send confirmation email (non-blocking — failure does not fail the request)
+    if let Some(smtp) = state.smtp.clone() {
+        let to = body.guest_email.clone();
+        let summary_url = format!("{}/buy/summary/{}", state.config.app_base_url, guest_token);
+        let body_text = build_confirmation_body(&number, &now.date_naive().to_string(), total_amount, &response_lines, &summary_url);
+        tokio::spawn(async move {
+            if let Err(e) = crate::users::email::send_smtp_email(&smtp, &to, "Commande confirmée", body_text).await {
+                tracing::warn!(error = %e, "Failed to send guest order confirmation email");
+            }
+        });
+    }
 
     Ok(Json(GuestBillResponse {
         guest_token: guest_token.to_string(),
@@ -287,9 +303,46 @@ pub async fn create_guest_bill(
         date: now.date_naive().to_string(),
         amount: total_amount,
         is_paid: false,
+        payment_method: resolved_method,
+        checkout_failed,
         lines: response_lines,
         payment_url,
     }))
+}
+
+fn build_confirmation_body(
+    bill_number: &str,
+    date: &str,
+    amount: f64,
+    lines: &[GuestBillLineResponse],
+    summary_url: &str,
+) -> String {
+    let mut detail = String::new();
+    for line in lines {
+        let voucher_count = line.vouchers.len();
+        let duration = line.vouchers.first().map(|v| v.duration).unwrap_or(0);
+        if line.quantity > 1 {
+            detail.push_str(&format!(
+                "  - {}× {} ({} voucher{}, {}h chacun)\n",
+                line.quantity,
+                line.service_name,
+                voucher_count,
+                if voucher_count > 1 { "s" } else { "" },
+                duration,
+            ));
+        } else {
+            detail.push_str(&format!(
+                "  - {} ({} voucher{}, {}h)\n",
+                line.service_name,
+                voucher_count,
+                if voucher_count > 1 { "s" } else { "" },
+                duration,
+            ));
+        }
+    }
+    format!(
+        "Bonjour,\n\nVotre commande a bien été confirmée.\n\nFacture : {bill_number}\nDate    : {date}\nMontant : {amount:.2} €\n\nDétail :\n{detail}\nRetrouvez vos vouchers et le suivi de votre commande ici :\n{summary_url}\n\nMerci pour votre confiance !\n"
+    )
 }
 
 #[utoipa::path(
@@ -315,11 +368,14 @@ pub async fn get_guest_bill(
         billing_date: chrono::NaiveDate,
         amount: f64,
         is_paid: bool,
+        payment_method: String,
+        checkout_failed: bool,
     }
 
     let row = sqlx::query_as::<_, GuestBillRow>(
         r#"
-        SELECT b.id, b.number, b.billing_date, b.amount, b."isPaid" AS is_paid
+        SELECT b.id, b.number, b.billing_date, b.amount, b."isPaid" AS is_paid,
+               gb.payment_method, gb.checkout_failed
         FROM billjobs_bill b
         JOIN portal_guest_bill gb ON gb.bill_id = b.id
         WHERE gb.guest_token = $1
@@ -339,6 +395,8 @@ pub async fn get_guest_bill(
         date: row.billing_date.to_string(),
         amount: row.amount,
         is_paid: row.is_paid,
+        payment_method: PaymentMethod::from(row.payment_method.as_str()),
+        checkout_failed: row.checkout_failed,
         lines,
         payment_url: None,
     }))
@@ -571,6 +629,162 @@ pub async fn guest_payment_webhook(
     });
 
     StatusCode::OK
+}
+
+#[utoipa::path(
+    get,
+    path = "/guest/bills/{token}/payment-status",
+    tag = "Guest",
+    params(
+        ("token" = String, Path, description = "Guest token UUID"),
+    ),
+    responses(
+        (status = 200, description = "Payment status for an on-site bill", body = PaymentStatusResponse),
+        (status = 404, description = "Bill not found"),
+    )
+)]
+pub async fn get_guest_payment_status(
+    State(state): State<InvoiceState>,
+    Path(token): Path<Uuid>,
+) -> Result<Json<PaymentStatusResponse>, AppError> {
+    #[derive(FromRow)]
+    struct StatusRow {
+        id: i32,
+        number: String,
+        is_paid: bool,
+    }
+
+    let row = sqlx::query_as::<_, StatusRow>(
+        r#"
+        SELECT b.id, b.number, b."isPaid" AS is_paid
+        FROM billjobs_bill b
+        JOIN portal_guest_bill gb ON gb.bill_id = b.id
+        WHERE gb.guest_token = $1
+        "#,
+    )
+    .bind(token)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    if row.is_paid {
+        return Ok(Json(PaymentStatusResponse { paid: true, amount: None }));
+    }
+
+    let Some(sumup) = &state.sumup else {
+        return Ok(Json(PaymentStatusResponse { paid: false, amount: None }));
+    };
+
+    let oldest_time = Utc::now() - chrono::Duration::minutes(10);
+    let transactions = sumup
+        .get_recent_transactions(oldest_time)
+        .await
+        .map_err(|e| AppError::External(e.to_string()))?;
+
+    let matched = transactions.into_iter().find(|t| {
+        t.description
+            .as_deref()
+            .map(|d| d.trim().eq_ignore_ascii_case(&row.number))
+            .unwrap_or(false)
+    });
+
+    if let Some(tx) = matched {
+        if let Err(e) = sqlx::query(r#"UPDATE billjobs_bill SET "isPaid" = true WHERE id = $1"#)
+            .bind(row.id)
+            .execute(&state.db)
+            .await
+        {
+            tracing::error!(bill_id = row.id, error = %e, "Failed to mark bill as paid via SumUp polling");
+        }
+        Ok(Json(PaymentStatusResponse { paid: true, amount: Some(tx.amount) }))
+    } else {
+        Ok(Json(PaymentStatusResponse { paid: false, amount: None }))
+    }
+}
+
+async fn provision_sumup_checkout(
+    state: &InvoiceState,
+    guest_token: Uuid,
+    bill_number: &str,
+    amount: f64,
+) -> anyhow::Result<String> {
+    let sumup = state.sumup.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("SumUp is not configured"))?;
+    let redirect = format!("{}/buy/summary/{}", state.config.app_base_url, guest_token);
+    let webhook = format!("{}/api/guest/payment/webhook", state.config.app_base_url);
+    let created = sumup.create_checkout(&guest_token.to_string(), bill_number, amount, &redirect, &webhook).await?;
+    if let Err(e) = sqlx::query(
+        "UPDATE portal_guest_bill SET sumup_checkout_id = $1, payment_method = $2, checkout_failed = false WHERE guest_token = $3",
+    )
+    .bind(&created.checkout_id)
+    .bind(PaymentMethod::Card.as_str())
+    .bind(guest_token)
+    .execute(&state.db)
+    .await
+    {
+        tracing::error!(error = %e, "Failed to store SumUp checkout_id");
+    }
+    Ok(created.checkout_url)
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct SwitchToCardResponse {
+    pub payment_url: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/guest/bills/{token}/checkout",
+    tag = "Guest",
+    params(
+        ("token" = String, Path, description = "Guest token UUID"),
+    ),
+    responses(
+        (status = 200, description = "SumUp hosted checkout URL created", body = SwitchToCardResponse),
+        (status = 400, description = "Bill already paid or card payment not available"),
+        (status = 404, description = "Bill not found"),
+    )
+)]
+pub async fn switch_to_card_checkout(
+    State(state): State<InvoiceState>,
+    Path(token): Path<Uuid>,
+) -> Result<Json<SwitchToCardResponse>, AppError> {
+    #[derive(FromRow)]
+    struct BillRow {
+        number: String,
+        amount: f64,
+        is_paid: bool,
+        payment_method: String,
+    }
+
+    let row = sqlx::query_as::<_, BillRow>(
+        r#"
+        SELECT b.number, b.amount, b."isPaid" AS is_paid, gb.payment_method
+        FROM billjobs_bill b
+        JOIN portal_guest_bill gb ON gb.bill_id = b.id
+        WHERE gb.guest_token = $1
+        "#,
+    )
+    .bind(token)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    if row.is_paid {
+        return Err(AppError::BadRequest("Bill is already paid".into()));
+    }
+    if PaymentMethod::from(row.payment_method.as_str()) == PaymentMethod::Card {
+        return Err(AppError::BadRequest("Bill already has a card checkout in progress".into()));
+    }
+    if state.sumup.is_none() {
+        return Err(AppError::BadRequest("Card payment not available".into()));
+    }
+
+    let payment_url = provision_sumup_checkout(&state, token, &row.number, row.amount)
+        .await
+        .map_err(|e| AppError::External(e.to_string()))?;
+
+    Ok(Json(SwitchToCardResponse { payment_url }))
 }
 
 #[utoipa::path(

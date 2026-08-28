@@ -5,6 +5,9 @@ import type { VoucherStatusEntry } from './bills'
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
+export const PaymentMethod = { Card: 'card', OnSite: 'on_site' } as const
+export type PaymentMethod = typeof PaymentMethod[keyof typeof PaymentMethod]
+
 const GuestServicesResponseSchema = z.object({
   data: z.array(ServiceSchema),
 })
@@ -30,6 +33,8 @@ export const GuestBillResponseSchema = z.object({
   date: z.string(),
   amount: z.number(),
   is_paid: z.boolean(),
+  payment_method: z.enum(['card', 'on_site']).default('on_site'),
+  checkout_failed: z.boolean().default(false),
   lines: z.array(GuestBillLineSchema),
   payment_url: z.string().nullable().optional(),
 })
@@ -43,6 +48,11 @@ const VoucherCheckResponseSchema = z.object({
     duration: z.number(),
     status: z.string(),
   })),
+})
+
+const PaymentStatusSchema = z.object({
+  paid: z.boolean(),
+  amount: z.number().optional(),
 })
 
 // ── API calls ─────────────────────────────────────────────────────────────────
@@ -63,9 +73,10 @@ export async function listGuestServices() {
 
 export interface CreateGuestBillRequest {
   lines: { service_id: number; quantity: number }[]
+  guest_email: string
   billing_name?: string
   billing_address?: string
-  payment_method?: string
+  payment_method?: PaymentMethod
 }
 
 export async function createGuestBill(body: CreateGuestBillRequest): Promise<GuestBillResponse> {
@@ -79,6 +90,16 @@ export async function createGuestBill(body: CreateGuestBillRequest): Promise<Gue
 export async function getGuestBill(token: string): Promise<GuestBillResponse> {
   const raw = await guestFetch<unknown>(`/api/guest/bills/${token}`)
   return GuestBillResponseSchema.parse(raw)
+}
+
+export async function switchToCardPayment(token: string): Promise<{ payment_url: string }> {
+  const raw = await guestFetch<unknown>(`/api/guest/bills/${token}/checkout`, { method: 'POST' })
+  return z.object({ payment_url: z.string() }).parse(raw)
+}
+
+export async function getGuestPaymentStatus(token: string): Promise<{ paid: boolean; amount?: number }> {
+  const raw = await guestFetch<unknown>(`/api/guest/bills/${token}/payment-status`)
+  return PaymentStatusSchema.parse(raw)
 }
 
 export async function checkGuestVouchers(token: string): Promise<VoucherStatusEntry[]> {

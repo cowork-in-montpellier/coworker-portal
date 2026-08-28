@@ -23,8 +23,11 @@ pub fn router() -> OpenApiRouter<State> {
         .routes(routes!(guest::create_guest_bill))
         .routes(routes!(guest::get_guest_bill))
         .routes(routes!(guest::check_guest_vouchers))
+        .routes(routes!(guest::get_guest_payment_status))
+        .routes(routes!(guest::switch_to_card_checkout))
         .routes(routes!(guest::guest_bill_pdf))
         .routes(routes!(guest::guest_payment_webhook))
         .routes(routes!(connected::connected_guests))
+        .routes(routes!(connected::get_onsite_payment_presence))
         .routes(routes!(occupancy::get_occupancy))
 }

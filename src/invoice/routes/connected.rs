@@ -103,3 +103,47 @@ pub async fn connected_guests(
     let total = active.len();
     Ok(Json(ConnectedGuestsResponse { total, account_users, guest_count, unknown_count }))
 }
+
+#[derive(Serialize, ToSchema)]
+pub struct OnsitePaymentPresenceResponse {
+    pub present: bool,
+}
+
+#[utoipa::path(
+    get,
+    path = "/connected/onsite-payment",
+    tag = "Vouchers",
+    responses(
+        (status = 200, description = "Whether any connected account user has onsite payment enabled", body = OnsitePaymentPresenceResponse),
+    )
+)]
+pub async fn get_onsite_payment_presence(
+    State(state): State<InvoiceState>,
+) -> Result<Json<OnsitePaymentPresenceResponse>, AppError> {
+    let active = state.unify.get_active_guests().await
+        .map_err(|e| AppError::External(e.to_string()))?;
+
+    if active.is_empty() {
+        return Ok(Json(OnsitePaymentPresenceResponse { present: false }));
+    }
+
+    let unify_ids: Vec<&str> = active.iter().map(|g| g.voucher_id.as_str()).collect();
+
+    let present: bool = sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM portal_voucher pv
+            JOIN billjobs_bill b ON b.id = pv.bill_id
+            JOIN portal_user_settings s ON s.user_id = b.user_id
+            WHERE pv.unify_id = ANY($1)
+              AND s.onsite_payment = true
+        )
+        "#,
+    )
+    .bind(&unify_ids as &[&str])
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(OnsitePaymentPresenceResponse { present }))
+}

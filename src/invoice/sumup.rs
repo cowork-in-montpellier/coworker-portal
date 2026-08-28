@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use super::config::SumUpConfig;
@@ -19,6 +20,22 @@ pub enum CheckoutStatus {
     Pending,
     Paid,
     Failed,
+}
+
+pub struct RecentTransaction {
+    pub amount: f64,
+    pub description: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TransactionHistoryResponse {
+    items: Vec<TransactionItem>,
+}
+
+#[derive(Deserialize)]
+struct TransactionItem {
+    amount: f64,
+    description: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -117,5 +134,31 @@ impl SumUpClient {
         };
         tracing::debug!(checkout_id, raw_status = %resp.status, ?status, "SumUp checkout status");
         Ok(status)
+    }
+
+    pub async fn get_recent_transactions(&self, oldest_time: DateTime<Utc>) -> Result<Vec<RecentTransaction>> {
+        let url = format!(
+            "{}/v2.1/merchants/{}/transactions/history",
+            self.base_url, self.merchant_code
+        );
+        let oldest_str = oldest_time.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        let resp: TransactionHistoryResponse = self
+            .client
+            .get(&url)
+            .query(&[
+                ("statuses[]", "SUCCESSFUL"),
+                ("oldest_time", oldest_str.as_str()),
+                ("limit", "50"),
+            ])
+            .send()
+            .await?
+            .error_for_status()
+            .context("SumUp transaction history request failed")?
+            .json()
+            .await?;
+        Ok(resp.items.into_iter().map(|t| RecentTransaction {
+            amount: t.amount,
+            description: t.description,
+        }).collect())
     }
 }

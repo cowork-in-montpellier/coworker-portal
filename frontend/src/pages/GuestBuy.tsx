@@ -81,6 +81,7 @@ export function GuestBuy() {
   const [loadingServices, setLoadingServices] = useState(true)
   // Map: service_id → quantity (absent = not selected)
   const [quantities, setQuantities] = useState<Map<number, number>>(new Map())
+  const [guestEmail, setGuestEmail] = useState('')
   const [billingName, setBillingName] = useState('')
   const [billingAddress, setBillingAddress] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -118,10 +119,9 @@ export function GuestBuy() {
     navigate('/buy/checkout', {
       state: {
         lines,
-        selectedServices,
+        guestEmail,
         billingName: billingName || undefined,
         billingAddress: billingAddress || undefined,
-        total,
       },
     })
   }
@@ -183,8 +183,21 @@ export function GuestBuy() {
             <div className="card bg-base-100 shadow-sm">
               <div className="card-body p-4 gap-3">
                 <h3 className="font-semibold text-sm text-base-content/60 uppercase tracking-wide">
-                  Facturation (optionnel)
+                  Contact & facturation
                 </h3>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm w-20 shrink-0 text-right text-base-content/60">
+                    Email <span className="text-error">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    className="input input-bordered input-sm flex-1"
+                    placeholder="vous@exemple.fr"
+                    value={guestEmail}
+                    onChange={e => setGuestEmail(e.target.value)}
+                    required
+                  />
+                </div>
                 <div className="flex items-center gap-3">
                   <label className="text-sm w-20 shrink-0 text-right text-base-content/60">Nom</label>
                   <input
@@ -227,7 +240,7 @@ export function GuestBuy() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={quantities.size === 0}
+                  disabled={quantities.size === 0 || !guestEmail.includes('@')}
                 >
                   Confirmer
                 </button>

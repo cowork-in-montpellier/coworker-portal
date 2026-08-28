@@ -1,0 +1,4 @@
+ALTER TABLE portal_guest_bill
+  ADD COLUMN IF NOT EXISTS payment_method  VARCHAR(20)  NOT NULL DEFAULT 'on_site',
+  ADD COLUMN IF NOT EXISTS checkout_failed BOOLEAN      NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS guest_email     VARCHAR(254) NOT NULL DEFAULT '';

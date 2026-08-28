@@ -24,3 +24,11 @@ export async function fetchConnected(): Promise<ConnectedGuestsResponse> {
   const raw = await apiFetch<unknown>('/api/connected')
   return ConnectedGuestsResponseSchema.parse(raw)
 }
+
+const OnsitePaymentPresenceSchema = z.object({ present: z.boolean() })
+
+export async function fetchOnsitePaymentPresence(): Promise<boolean> {
+  const res = await fetch('/api/connected/onsite-payment')
+  if (!res.ok) throw new Error(`API error ${res.status}`)
+  return OnsitePaymentPresenceSchema.parse(await res.json()).present
+}
