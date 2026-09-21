@@ -14,6 +14,7 @@ mod config;
 mod error;
 mod invoice;
 mod openapi;
+mod sutom;
 mod users;
 
 #[tokio::main]
@@ -33,6 +34,7 @@ async fn main() -> Result<()> {
     let users_config = users::Config::from_env()?;
     let invoice_config = invoice::Config::from_env()?;
     let calendar_config = calendar::Config::from_env()?;
+    let sutom_config = sutom::Config::from_env()?;
 
     let db = PgPoolOptions::new()
         .max_connections(5)
@@ -105,21 +107,30 @@ async fn main() -> Result<()> {
         config: Arc::new(calendar_config),
     };
 
+    let sutom_state = sutom::State {
+        db: db.clone(),
+        http: reqwest::Client::builder().user_agent("coworker-portal-sutom/1.0").build()?,
+        config: Arc::new(sutom_config),
+    };
+
     let scheduler = JobScheduler::new().await?;
     invoice::tasks::register(&scheduler, invoice_state.clone()).await?;
     calendar::tasks::register(&scheduler, calendar_state.clone()).await?;
+    sutom::tasks::register(&scheduler, sutom_state.clone()).await?;
     scheduler.start().await?;
 
     let mut api_doc = openapi::ApiDoc::openapi();
     api_doc.merge(users::openapi::ApiDoc::openapi());
     api_doc.merge(invoice::openapi::ApiDoc::openapi());
     api_doc.merge(calendar::openapi::ApiDoc::openapi());
+    api_doc.merge(sutom::openapi::ApiDoc::openapi());
 
     let (router, api) = OpenApiRouter::with_openapi(api_doc)
         .nest("/api/auth", users::routes::auth_router().with_state(users_state.clone()))
         .nest("/api", users::routes::router().with_state(users_state))
         .nest("/api", invoice::routes::router().with_state(invoice_state))
         .nest("/api", calendar::routes::router().with_state(calendar_state))
+        .nest("/api", sutom::routes::router().with_state(sutom_state))
         .split_for_parts();
 
     let app = router
