@@ -15,6 +15,7 @@ import { Landing } from './pages/Landing'
 import { Live } from './pages/Live'
 import { Profile } from './pages/Profile'
 import { ResetPassword } from './pages/ResetPassword'
+import { Sutom } from './pages/Sutom'
 
 function App() {
   return (
@@ -43,6 +44,7 @@ function App() {
         <Route path="/accept-invite" element={<AcceptInvite />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/live" element={<Live />} />
+        <Route path="/sutom" element={<Sutom />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

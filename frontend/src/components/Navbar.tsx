@@ -41,6 +41,7 @@ export function Navbar() {
           {authenticated && navLink('/dashboard', 'Factures')}
           {navLink('/calendar', 'Calendrier')}
           {navLink('/live', 'Live')}
+          {navLink('/sutom', 'Sutom')}
         </nav>
       </div>
       <div className="navbar-end gap-3">
