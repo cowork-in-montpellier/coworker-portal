@@ -1,6 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { type Bill, type ListBillsResponse, type VoucherStatusEntry, checkVouchers, downloadBillPdf, listBills, revokeVoucher } from '../api/bills'
+import {
+  type Bill,
+  type ListBillsResponse,
+  type VoucherStatusEntry,
+  checkVouchers,
+  downloadBillPdf,
+  listBills,
+  revokeVoucher,
+} from '../api/bills'
 import { generateVoucherPdf } from '../components/VoucherPdf'
 import { type Service, listServices } from '../api/services'
 import { Navbar } from '../components/Navbar'
@@ -25,7 +33,9 @@ function SkeletonRow() {
   return (
     <tr>
       {Array.from({ length: 5 }).map((_, i) => (
-        <td key={i}><div className="skeleton h-4 w-full" /></td>
+        <td key={i}>
+          <div className="skeleton h-4 w-full" />
+        </td>
       ))}
     </tr>
   )
@@ -38,12 +48,14 @@ function isPastMonth(isoDate: string): boolean {
 
 /** Flatten all vouchers from all lines of a bill into a single list. */
 function flattenVouchers(bill: Bill): VoucherStatusEntry[] {
-  return bill.lines.flatMap(l => l.vouchers.map(v => ({
-    unify_id: v.unify_id,
-    code: v.code,
-    duration: v.duration,
-    status: v.status,
-  })))
+  return bill.lines.flatMap(l =>
+    l.vouchers.map(v => ({
+      unify_id: v.unify_id,
+      code: v.code,
+      duration: v.duration,
+      status: v.status,
+    })),
+  )
 }
 
 export function Dashboard() {
@@ -63,12 +75,20 @@ export function Dashboard() {
   const [revokingVoucherId, setRevokingVoucherId] = useState<string | null>(null)
   const toast = useToast()
 
-  const toggleExpand = (id: number) =>
-    setExpandedId(prev => (prev === id ? null : id))
+  const toggleExpand = (id: number) => setExpandedId(prev => (prev === id ? null : id))
 
   const handleCopyVoucher = (unifyId: string, code: string) => {
     navigator.clipboard.writeText(code.replace(/-/g, '')).then(() => {
       setCopiedVoucherId(unifyId)
+      if (copiedVoucherTimer.current) clearTimeout(copiedVoucherTimer.current)
+      copiedVoucherTimer.current = setTimeout(() => setCopiedVoucherId(null), 2000)
+    })
+  }
+
+  const handleCopyAllVouchers = (billId: number, vouchers: VoucherStatusEntry[]) => {
+    const codes = vouchers.map(v => v.code.replace(/-/g, '')).join('\n')
+    navigator.clipboard.writeText(codes).then(() => {
+      setCopiedVoucherId(`bill-${billId}`)
       if (copiedVoucherTimer.current) clearTimeout(copiedVoucherTimer.current)
       copiedVoucherTimer.current = setTimeout(() => setCopiedVoucherId(null), 2000)
     })
@@ -125,7 +145,9 @@ export function Dashboard() {
   useEffect(() => {
     listServices()
       .then(services => setServiceMap(new Map(services.map(s => [s.id, s]))))
-      .catch(() => { /* non-fatal: service names just won't show */ })
+      .catch(() => {
+        /* non-fatal: service names just won't show */
+      })
   }, [])
 
   useEffect(() => {
@@ -167,16 +189,10 @@ export function Dashboard() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              className="btn btn-outline btn-sm"
-              onClick={() => navigate('/invite')}
-            >
+            <button className="btn btn-outline btn-sm" onClick={() => navigate('/invite')}>
               Inviter un membre
             </button>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={() => navigate('/bills/new')}
-            >
+            <button className="btn btn-primary btn-sm" onClick={() => navigate('/bills/new')}>
               + Nouvelle facture
             </button>
           </div>
@@ -200,9 +216,7 @@ export function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {loading && Array.from({ length: PAGE_SIZE }).map((_, i) => (
-                <SkeletonRow key={i} />
-              ))}
+              {loading && Array.from({ length: PAGE_SIZE }).map((_, i) => <SkeletonRow key={i} />)}
 
               {!loading && result?.data.length === 0 && (
                 <tr>
@@ -212,202 +226,258 @@ export function Dashboard() {
                 </tr>
               )}
 
-              {!loading && result?.data.map(bill => {
-                const managedLines = bill.lines.filter(l => l.service_id != null)
-                const allUnmanaged = managedLines.length === 0
-                const expanded = expandedId === bill.id
-                const allVouchers = flattenVouchers(bill)
-                const hasVouchers = allVouchers.length > 0
-                const billStatuses = voucherStatuses.get(bill.id) ?? []
+              {!loading &&
+                result?.data.map(bill => {
+                  const managedLines = bill.lines.filter(l => l.service_id != null)
+                  const allUnmanaged = managedLines.length === 0
+                  const expanded = expandedId === bill.id
+                  const allVouchers = flattenVouchers(bill)
+                  const hasVouchers = allVouchers.length > 0
+                  const billStatuses = voucherStatuses.get(bill.id) ?? []
+                  const validVoucherCount = allVouchers.filter(v => {
+                    const live = billStatuses.find(e => e.unify_id === v.unify_id)
+                    return (live?.status ?? v.status) === 'Valid'
+                  }).length
 
-                return (
-                  <>
-                    <tr
-                      key={bill.id}
-                      className={allUnmanaged ? 'opacity-50 italic' : 'hover cursor-pointer'}
-                      onClick={() => hasVouchers && toggleExpand(bill.id)}
-                    >
-                      <td className="font-mono">{bill.number}</td>
-                      <td>{bill.date}</td>
-                      <td>
-                        {hasVouchers ? (
-                          <div className="flex items-start gap-1.5">
-                            <svg
-                              className={`w-3.5 h-3.5 mt-0.5 text-base-content/50 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
-                              viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
-                            >
-                              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                            </svg>
-                            <ul className="space-y-0.5">
-                              {managedLines.map(l => {
-                                const name = serviceMap.get(l.service_id!)?.name ?? '—'
-                                const label = l.quantity > 1 ? `${l.quantity}× ${name}` : name
-                                const validCount = l.vouchers.filter(v => {
-                                  const live = billStatuses.find(e => e.unify_id === v.unify_id)
-                                  return (live?.status ?? v.status) === 'Valid'
-                                }).length
-                                const totalCount = l.vouchers.length
-                                return (
-                                  <li key={l.id} className="flex items-center gap-2">
-                                    <span className="text-base-content/70">{label}</span>
-                                    {validCount > 0 && (
-                                      <span className="badge badge-xs badge-info">
-                                        {validCount}/{totalCount} valide{validCount !== 1 ? 's' : ''}
-                                      </span>
-                                    )}
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          </div>
-                        ) : (
-                          <span className="text-base-content/70">
-                            {allUnmanaged ? null : managedLines.map(l => {
-                              const name = serviceMap.get(l.service_id!)?.name ?? '—'
-                              return l.quantity > 1 ? `${l.quantity}× ${name}` : name
-                            }).join(', ')}
-                          </span>
-                        )}
-                      </td>
-                      <td className="text-right">{bill.amount.toFixed(2)} €</td>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          {invoice_available && (
-                            <button
-                              className="btn btn-xs btn-ghost btn-circle"
-                              disabled={invoiceId === bill.id}
-                              title="Télécharger la facture"
-                              onClick={e => { e.stopPropagation(); handleInvoice(bill.id, bill.number) }}
-                            >
-                              {invoiceId === bill.id
-                                ? <span className="loading loading-spinner loading-xs" />
-                                : '⎙'}
-                            </button>
+                  return (
+                    <Fragment key={bill.id}>
+                      <tr
+                        className={allUnmanaged ? 'opacity-50 italic' : 'hover cursor-pointer'}
+                        onClick={() => hasVouchers && toggleExpand(bill.id)}
+                      >
+                        <td className="font-mono">{bill.number}</td>
+                        <td>{bill.date}</td>
+                        <td>
+                          {hasVouchers ? (
+                            <div className="flex items-start gap-1.5">
+                              <svg
+                                className={`w-3.5 h-3.5 mt-0.5 text-base-content/50 shrink-0 transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}
+                                viewBox="0 0 20 20"
+                                fill="currentColor"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  fillRule="evenodd"
+                                  d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                                  clipRule="evenodd"
+                                />
+                              </svg>
+                              <ul className="space-y-0.5">
+                                {managedLines.map(l => {
+                                  const name = serviceMap.get(l.service_id!)?.name ?? '—'
+                                  const label = l.quantity > 1 ? `${l.quantity}× ${name}` : name
+                                  const validCount = l.vouchers.filter(v => {
+                                    const live = billStatuses.find(e => e.unify_id === v.unify_id)
+                                    return (live?.status ?? v.status) === 'Valid'
+                                  }).length
+                                  const totalCount = l.vouchers.length
+                                  return (
+                                    <li key={l.id} className="flex items-center gap-2">
+                                      <span className="text-base-content/70">{label}</span>
+                                      {validCount > 0 && (
+                                        <span className="badge badge-xs badge-info">
+                                          {validCount}/{totalCount} valide{validCount !== 1 ? 's' : ''}
+                                        </span>
+                                      )}
+                                    </li>
+                                  )
+                                })}
+                              </ul>
+                            </div>
+                          ) : (
+                            <span className="text-base-content/70">
+                              {allUnmanaged
+                                ? null
+                                : managedLines
+                                    .map(l => {
+                                      const name = serviceMap.get(l.service_id!)?.name ?? '—'
+                                      return l.quantity > 1 ? `${l.quantity}× ${name}` : name
+                                    })
+                                    .join(', ')}
+                            </span>
                           )}
-                          {!allUnmanaged && <StatusBadge isPaid={bill.is_paid} date={bill.date} />}
-                        </div>
-                      </td>
-                    </tr>
-
-                    {expanded && hasVouchers && (
-                      <tr key={`${bill.id}-vouchers`} className="bg-base-200/60">
-                        <td colSpan={5} className="py-4 px-4">
-                          <div className="flex items-center gap-2 mb-3">
-                            <span className="text-xs text-base-content/40 font-medium uppercase tracking-wide">Vouchers</span>
-                            <button
-                              className="btn btn-xs btn-ghost btn-circle"
-                              disabled={checkingId === bill.id}
-                              onClick={() => handleCheckVouchers(bill.id)}
-                              title="Vérifier le statut"
-                            >
-                              {checkingId === bill.id
-                                ? <span className="loading loading-spinner loading-xs" />
-                                : '↻'}
-                            </button>
-                            {(voucherStatuses.get(bill.id) ?? []).some(v => v.status === 'Valid') && (
+                        </td>
+                        <td className="text-right">{bill.amount.toFixed(2)} €</td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            {invoice_available && (
                               <button
                                 className="btn btn-xs btn-ghost btn-circle"
-                                disabled={downloadingId === bill.id}
-                                onClick={() => handleDownloadPdf(bill.id, bill.number, voucherStatuses.get(bill.id) ?? [])}
-                                title="Télécharger le PDF"
+                                disabled={invoiceId === bill.id}
+                                title="Télécharger la facture"
+                                onClick={e => {
+                                  e.stopPropagation()
+                                  handleInvoice(bill.id, bill.number)
+                                }}
                               >
-                                {downloadingId === bill.id
-                                  ? <span className="loading loading-spinner loading-xs" />
-                                  : '⎙'}
+                                {invoiceId === bill.id ? <span className="loading loading-spinner loading-xs" /> : '⎙'}
                               </button>
                             )}
-                          </div>
-
-                          {/* Render vouchers grouped by line; show service name sub-header when multi-line */}
-                          <div className="flex flex-col gap-4">
-                            {bill.lines.filter(l => l.vouchers.length > 0).map(line => {
-                              const lineName = line.service_id != null
-                                ? (serviceMap.get(line.service_id)?.name ?? null)
-                                : null
-                              const lineLabel = lineName
-                                ? (line.quantity > 1 ? `${line.quantity}× ${lineName}` : lineName)
-                                : null
-                              const isMonthly = line.service_id != null
-                                && serviceMap.get(line.service_id)?.voucher_spec.kind === 'Monthly'
-                              return (
-                                <div key={line.id}>
-                                  {bill.lines.filter(l => l.vouchers.length > 0).length > 1 && lineLabel && (
-                                    <p className="text-xs text-base-content/50 font-medium mb-2">{lineLabel}</p>
-                                  )}
-                                  <div className="flex flex-wrap gap-3">
-                                    {line.vouchers.map((v, i) => {
-                                      const liveStatus = voucherStatuses.get(bill.id)?.find(s => s.unify_id === v.unify_id)
-                                      const status = liveStatus?.status ?? null
-                                      const isExpired = status === 'Expired' || status === 'Used'
-                                      const canRevoke = isMonthly && isPastMonth(bill.date)
-                                      return (
-                                        <div
-                                          key={v.unify_id}
-                                          className={`card border shadow-sm w-44 transition-opacity group relative ${
-                                            isExpired
-                                              ? 'bg-base-200 border-base-300 opacity-40'
-                                              : 'bg-base-100 border-base-300'
-                                          }`}
-                                        >
-                                          <div className="absolute bottom-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                            <button
-                                              type="button"
-                                              className="btn btn-xs btn-ghost"
-                                              title="Copier le code (sans tirets)"
-                                              onClick={() => handleCopyVoucher(v.unify_id, v.code)}
-                                            >
-                                              {copiedVoucherId === v.unify_id ? 'Copié ✓' : 'Copier'}
-                                            </button>
-                                            {canRevoke && (
-                                              <button
-                                                type="button"
-                                                className="btn btn-xs btn-ghost text-error"
-                                                title="Révoquer ce voucher du mois précédent"
-                                                disabled={revokingVoucherId === v.unify_id}
-                                                onClick={() => handleRevokeVoucher(bill.id, v.unify_id)}
-                                              >
-                                                {revokingVoucherId === v.unify_id ? '…' : 'Révoquer'}
-                                              </button>
-                                            )}
-                                          </div>
-                                          <div className="card-body p-3 gap-1">
-                                            <div className="flex items-center justify-between">
-                                              <p className="text-xs text-base-content/40 font-medium">Voucher {i + 1}</p>
-                                              {status && (
-                                                <span className={`badge badge-xs ${
-                                                  status === 'Valid' ? 'badge-success' :
-                                                  status === 'Used' ? 'badge-neutral' :
-                                                  status === 'Expired' ? 'badge-error' :
-                                                  'badge-ghost'
-                                                }`}>
-                                                  {status === 'Valid' ? 'Valide' :
-                                                   status === 'Used' ? 'Utilisé' :
-                                                   status === 'Expired' ? 'Expiré' : 'Inconnu'}
-                                                </span>
-                                              )}
-                                            </div>
-                                            <p className={`font-mono font-semibold text-sm tracking-wide ${isExpired ? 'line-through' : ''}`}>
-                                              {v.code}
-                                            </p>
-                                            <p className="text-xs text-base-content/50">{v.duration}h</p>
-                                            {v.active_days_count > 0 && (
-                                              <p className="text-xs text-primary/70 font-medium">{v.active_days_count} jour{v.active_days_count > 1 ? 's' : ''} actif{v.active_days_count > 1 ? 's' : ''}</p>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                </div>
-                              )
-                            })}
+                            {!allUnmanaged && <StatusBadge isPaid={bill.is_paid} date={bill.date} />}
                           </div>
                         </td>
                       </tr>
-                    )}
-                  </>
-                )
-              })}
+
+                      {expanded && hasVouchers && (
+                        <tr key={`${bill.id}-vouchers`} className="bg-base-200/60">
+                          <td colSpan={5} className="py-4 px-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <span className="text-xs text-base-content/40 font-medium uppercase tracking-wide">
+                                Vouchers ({validVoucherCount}/{allVouchers.length} valides)
+                              </span>
+                              <button
+                                className="btn btn-xs btn-ghost"
+                                disabled={checkingId === bill.id}
+                                onClick={() => handleCheckVouchers(bill.id)}
+                                title="Vérifier le statut de mes vouchers"
+                              >
+                                {checkingId === bill.id ? <span className="loading loading-spinner loading-xs" /> : '↻'}{' '}
+                                Vérifier leur statut
+                              </button>
+                              {(voucherStatuses.get(bill.id) ?? []).some(v => v.status === 'Valid') && (
+                                <button
+                                  className="btn btn-xs btn-ghost"
+                                  onClick={() => handleCopyAllVouchers(bill.id, voucherStatuses.get(bill.id) ?? [])}
+                                  title="Copier tous les codes valides"
+                                >
+                                  {copiedVoucherId === `bill-${bill.id}` ? '✓ Copié' : '⧉ Copier tous'}
+                                </button>
+                              )}
+
+                              {(voucherStatuses.get(bill.id) ?? []).some(v => v.status === 'Valid') && (
+                                <button
+                                  className="btn btn-xs btn-ghost"
+                                  disabled={downloadingId === bill.id}
+                                  onClick={() =>
+                                    handleDownloadPdf(bill.id, bill.number, voucherStatuses.get(bill.id) ?? [])
+                                  }
+                                  title="Télécharger le PDF"
+                                >
+                                  {downloadingId === bill.id ? (
+                                    <span className="loading loading-spinner loading-xs" />
+                                  ) : (
+                                    '⎙'
+                                  )}{' '}
+                                  Télécharger au format PDF
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Render vouchers grouped by line; show service name sub-header when multi-line */}
+                            <div className="flex flex-col gap-4">
+                              {bill.lines
+                                .filter(l => l.vouchers.length > 0)
+                                .map(line => {
+                                  const lineName =
+                                    line.service_id != null ? (serviceMap.get(line.service_id)?.name ?? null) : null
+                                  const lineLabel = lineName
+                                    ? line.quantity > 1
+                                      ? `${line.quantity}× ${lineName}`
+                                      : lineName
+                                    : null
+                                  const isMonthly =
+                                    line.service_id != null &&
+                                    serviceMap.get(line.service_id)?.voucher_spec.kind === 'Monthly'
+                                  return (
+                                    <div key={line.id}>
+                                      {bill.lines.filter(l => l.vouchers.length > 0).length > 1 && lineLabel && (
+                                        <p className="text-xs text-base-content/50 font-medium mb-2">{lineLabel}</p>
+                                      )}
+                                      <div className="flex flex-wrap gap-3">
+                                        {[...line.vouchers]
+                                          .sort((a, b) => a.unify_id.localeCompare(b.unify_id))
+                                          .map((v, i) => {
+                                            const liveStatus = voucherStatuses
+                                              .get(bill.id)
+                                              ?.find(s => s.unify_id === v.unify_id)
+                                            const status = liveStatus?.status ?? null
+                                            const isExpired = status === 'Expired' || status === 'Used'
+                                            const canRevoke = isMonthly && isPastMonth(bill.date)
+                                            return (
+                                              <div
+                                                key={v.unify_id}
+                                                className={`card border shadow-sm w-44 transition-opacity group relative ${
+                                                  isExpired
+                                                    ? 'bg-base-200 border-base-300 opacity-40'
+                                                    : 'bg-base-100 border-base-300'
+                                                }`}
+                                              >
+                                                <div className="absolute bottom-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                                  <button
+                                                    type="button"
+                                                    className="btn btn-xs btn-ghost"
+                                                    title="Copier le code (sans tirets)"
+                                                    onClick={() => handleCopyVoucher(v.unify_id, v.code)}
+                                                  >
+                                                    {copiedVoucherId === v.unify_id ? 'Copié ✓' : 'Copier'}
+                                                  </button>
+                                                  {canRevoke && (
+                                                    <button
+                                                      type="button"
+                                                      className="btn btn-xs btn-ghost text-error"
+                                                      title="Révoquer ce voucher du mois précédent"
+                                                      disabled={revokingVoucherId === v.unify_id}
+                                                      onClick={() => handleRevokeVoucher(bill.id, v.unify_id)}
+                                                    >
+                                                      {revokingVoucherId === v.unify_id ? '…' : 'Révoquer'}
+                                                    </button>
+                                                  )}
+                                                </div>
+                                                <div className="card-body p-3 gap-1">
+                                                  <div className="flex items-center justify-between">
+                                                    <p className="text-xs text-base-content/40 font-medium">
+                                                      Voucher {i + 1}
+                                                    </p>
+                                                    {status && (
+                                                      <span
+                                                        className={`badge badge-xs ${
+                                                          status === 'Valid'
+                                                            ? 'badge-success'
+                                                            : status === 'Used'
+                                                              ? 'badge-neutral'
+                                                              : status === 'Expired'
+                                                                ? 'badge-error'
+                                                                : 'badge-ghost'
+                                                        }`}
+                                                      >
+                                                        {status === 'Valid'
+                                                          ? 'Valide'
+                                                          : status === 'Used'
+                                                            ? 'Utilisé'
+                                                            : status === 'Expired'
+                                                              ? 'Expiré'
+                                                              : 'Inconnu'}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                  <p
+                                                    className={`font-mono font-semibold text-sm tracking-wide ${isExpired ? 'line-through' : ''}`}
+                                                  >
+                                                    {v.code}
+                                                  </p>
+                                                  <p className="text-xs text-base-content/50">{v.duration}h</p>
+                                                  {v.active_days_count > 0 && (
+                                                    <p className="text-xs text-primary/70 font-medium">
+                                                      {v.active_days_count} jour{v.active_days_count > 1 ? 's' : ''}{' '}
+                                                      actif
+                                                      {v.active_days_count > 1 ? 's' : ''}
+                                                    </p>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            )
+                                          })}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
             </tbody>
           </table>
         </div>
@@ -415,11 +485,7 @@ export function Dashboard() {
         {totalPages > 1 && (
           <div className="flex justify-center mt-6">
             <div className="join">
-              <button
-                className="join-item btn btn-sm"
-                disabled={page === 0}
-                onClick={() => setPage(p => p - 1)}
-              >
+              <button className="join-item btn btn-sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
                 «
               </button>
               <button className="join-item btn btn-sm pointer-events-none">
