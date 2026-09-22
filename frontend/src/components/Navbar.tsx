@@ -19,29 +19,50 @@ export function Navbar() {
     window.location.href = '/login'
   }
 
-  const navLink = (to: string, label: string) => {
-    const active = location.pathname === to || (to === '/dashboard' && location.pathname.startsWith('/bills'))
-    return (
-      <Link
-        to={to}
-        className={`btn btn-ghost btn-sm ${active ? 'btn-active' : ''}`}
-      >
-        {label}
-      </Link>
-    )
-  }
+  const navItems: { to: string, label: string, authOnly?: boolean }[] = [
+    { to: '/dashboard', label: 'Factures', authOnly: true },
+    { to: '/calendar', label: 'Calendrier' },
+    { to: '/live', label: 'Live' },
+    { to: '/sutom', label: 'SUTOM', authOnly: true },
+  ]
+
+  const isActive = (to: string) =>
+    location.pathname === to || (to === '/dashboard' && location.pathname.startsWith('/bills'))
+
+  const visibleNavItems = navItems.filter(item => !item.authOnly || authenticated)
 
   return (
     <div className="navbar bg-base-100 border-b border-base-200 px-4">
       <div className="navbar-start gap-4">
+        <div className="dropdown lg:hidden">
+          <div tabIndex={0} role="button" className="btn btn-ghost btn-sm px-2" aria-label="Ouvrir le menu">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </div>
+          <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-200 z-50 w-48 p-1 mt-3">
+            {visibleNavItems.map(item => (
+              <li key={item.to}>
+                <Link to={item.to} className={isActive(item.to) ? 'active' : ''}>
+                  {item.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
         <Link to={authenticated ? '/dashboard' : '/login'}>
           <img src="/logo-default.png" alt="Coworking" className="h-8" />
         </Link>
-        <nav className="flex items-center gap-1">
-          {authenticated && navLink('/dashboard', 'Factures')}
-          {navLink('/calendar', 'Calendrier')}
-          {navLink('/live', 'Live')}
-          {navLink('/sutom', 'Sutom')}
+        <nav className="hidden lg:flex items-center gap-1">
+          {visibleNavItems.map(item => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={`btn btn-ghost btn-sm ${isActive(item.to) ? 'btn-active' : ''}`}
+            >
+              {item.label}
+            </Link>
+          ))}
         </nav>
       </div>
       <div className="navbar-end gap-3">

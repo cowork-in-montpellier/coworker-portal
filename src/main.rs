@@ -110,6 +110,7 @@ async fn main() -> Result<()> {
     let sutom_state = sutom::State {
         db: db.clone(),
         http: reqwest::Client::builder().user_agent("coworker-portal-sutom/1.0").build()?,
+        jwt: jwt.clone(),
         config: Arc::new(sutom_config),
     };
 

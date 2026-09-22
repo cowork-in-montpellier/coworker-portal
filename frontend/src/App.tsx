@@ -44,7 +44,7 @@ function App() {
         <Route path="/accept-invite" element={<AcceptInvite />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/live" element={<Live />} />
-        <Route path="/sutom" element={<Sutom />} />
+        <Route path="/sutom" element={<ProtectedRoute><Sutom /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
