@@ -1,7 +1,7 @@
 # Domain design
 
 The backend (`src/`) is organized as hexagonal/DDD-lite **modules**: `users`, `invoice`,
-`calendar`. Each module owns its domain types, DB access, HTTP routes, background tasks
+`calendar`, `sutom`. Each module owns its domain types, DB access, HTTP routes, background tasks
 and config slice. Modules only depend on each other through small published surfaces
 ("ports"); this document lists, per module, its domain types, the ports it defines or
 implements, its adapters, and its references to other modules.
@@ -13,8 +13,9 @@ implements, its adapters, and its references to other modules.
 | [`users`](#module-users) | `User`, invitations, password reset | — | `auth::HasJwt`, `auth::CurrentUser` (shared auth contract) | `invoice::ports::BillingDirectory` via `users::adapters::PgBillingDirectory` |
 | [`invoice`](#module-invoice) | `Service`, `Bill`, `Voucher`, `VoucherSpec`, `VoucherStatus` | `users::auth::{HasJwt, CurrentUser}` | `ports::BillingDirectory` | — |
 | [`calendar`](#module-calendar) | `Room`, `Booking` | `users::auth::{HasJwt, CurrentUser}` | — | — |
+| [`sutom`](#module-sutom) | `DailyWord`, `Attempt`, `LetterStatus`, par & leaderboard points | `users::auth::{HasJwt, CurrentUser}` | — | — |
 
-There is no direct coupling between `invoice` and `calendar`.
+There is no direct coupling between `invoice`, `calendar` and `sutom`.
 
 ## Shared kernel
 
@@ -683,3 +684,251 @@ Both feeds set `Last-Modified` from the most recent `created_at` among included 
 | `GOOGLE_CALDAV_EMAIL` | _(unset)_ | Google account email for CalDAV basic auth |
 | `GOOGLE_CALDAV_PASSWORD` | _(unset)_ | Google account app password for CalDAV basic auth |
 | `GOOGLE_CALDAV_CALENDAR_ID` | _(unset)_ | target Google Calendar ID |
+
+---
+
+## Module: `sutom`
+
+A daily French word-guessing game for members, based on the public
+[SUTOM](https://sutom.nocle.fr) instance. Every member plays the same word as the public
+site each day. Scores are shared between members through a per-day scoreboard and a
+rolling 30-day leaderboard.
+
+### Domain types
+
+DailyWord : The puzzle of one day, mirrored from the source site and cached locally.
+```typescript
+type DailyWord = {
+    gameDate: Date         // Europe/Paris calendar day — the identity of the puzzle
+    word: string           // cleaned target word (uppercase, no accents), e.g. "BLOUSON"
+    possibleWords: [string] // guessable dictionary: every word with the same length and first letter as `word`
+    puzzleNumber: int      // the source site's "SUTOM #N" numbering, see PuzzleNumber below
+    par: int | null        // ceil(avg(score)) of the day's finished attempts, frozen once computed
+
+    // invariant: word and possibleWords are stored already cleaned (see Word normalization)
+    // invariant: puzzleNumber = (gameDate - 2022-01-08) + 1
+    // invariant: once set, par never changes, even if more players catch up on that day later
+}
+```
+
+Attempt : One member's game for one day.
+```typescript
+type Attempt = {
+    userId: int          // ref User (auth_user.id)
+    gameDate: Date       // ref DailyWord
+    guesses: [string]    // ordered, cleaned guesses submitted so far
+    score: int | null    // null = in progress; 1..6 = solved in N guesses; 7 = failed (FAILED_SCORE)
+    updatedAt: DateTime  // time of the last submission — the completion time once score is set
+
+    // invariant: one attempt per (userId, gameDate)
+    // invariant: guesses.length <= MAX_ATTEMPTS (6)
+    // invariant: every guess has the target's length, starts with its first letter and is in possibleWords
+    // invariant: once score is set the attempt is finished and immutable
+}
+```
+
+LetterStatus : Feedback for one letter of a guess.
+```typescript
+type LetterStatus = "correct" | "present" | "absent"
+```
+
+Constants:
+
+| Name | Value | Meaning |
+|------|-------|---------|
+| `MAX_ATTEMPTS` | `6` | guesses allowed per day |
+| `FAILED_SCORE` | `7` | score recorded when all attempts are used without finding the word |
+| `HISTORY_WINDOW_DAYS` | `30` | playable window, today included; also the leaderboard window |
+
+### References to other modules
+
+- **`users::auth::{HasJwt, CurrentUser}`** — `sutom::State` implements `HasJwt`. Every
+  sutom route requires authentication and uses `CurrentUser` to identify the player.
+- **`auth_user`** (read-only) — joined in the repository to show players' `first_name` on
+  the scoreboard and leaderboard.
+
+### Ports defined
+
+None — `sutom` does not expose any port to other modules, and no other module
+implements anything for `sutom`.
+
+### Internal adapters
+
+- **`sutom::source`** — HTTP client for the source site (`https://sutom.nocle.fr`), see
+  [Edges](#edges-1).
+- **`sutom::tasks::refresh`** — nightly background task, see
+  [Nightly refresh](#nightly-refresh).
+
+### Business rules
+
+#### Word normalization
+`clean_word` mirrors the source site's `nettoyerMot`: trims, removes whitespace, removes
+diacritics (`é → E`, `ç → C`, `œ → O`, `æ → A`, …) and uppercases. It is applied to the
+word of the day, to every entry of the dictionary, and to every submitted guess before
+validation, so comparisons are always between cleaned words.
+
+#### Puzzle number
+`puzzle_number(date) = (date - 2022-01-08).days + 1`, matching the source site's
+`numeroGrille` (e.g. 2026-09-21 → `SUTOM #1718`).
+
+#### Guess validation
+A guess is rejected (`400`) with the source site's own messages, in this order:
+1. wrong length → *"Le mot proposé n'a pas la bonne longueur."*
+2. different first letter → *"Le mot proposé doit commencer par la même lettre que le mot recherché."*
+3. not in `possibleWords` → *"Ce mot n'est pas dans notre dictionnaire."*
+
+#### Letter scoring
+`score_guess` mirrors the source site's `analyserMot`:
+1. Letters at the right position are `correct`, and don't count toward the remaining letters.
+2. The remaining target letters are counted.
+3. From left to right, each other guess letter is `present` while the target still has an
+   unused copy of that letter, and `absent` otherwise.
+
+So a repeated letter is never marked `present` more times than it appears (unmatched) in the target.
+
+#### Attempt score
+- solved at guess *N* → `score = N` (1..6)
+- 6 guesses without the word → `score = FAILED_SCORE` (7)
+- otherwise → `score = null` (in progress)
+
+#### Par
+The par of a day is `ceil(avg(score))` over the day's finished attempts. Failed attempts
+count as 7.
+- **Frozen par**: computed by the nightly task for *yesterday* and written only if
+  `par IS NULL`. It never changes after that.
+- **Effective par**: what the API shows. It is the frozen par when set. Otherwise it is a
+  live estimate from the attempts finished so far, which changes as more players finish.
+  It is `null` if nobody has finished the day yet.
+
+#### Leaderboard points
+Stableford-like points for one finished attempt, given the day's `par`:
+
+```
+if score == FAILED_SCORE:   points = 0          // never any bonus for a failed attempt
+else:
+    diff    = par - score
+    divisor = score > par ? 2 : 1               // over par costs less than under par earns
+    points  = 3 + diff / divisor
+            + (firstToFinish ? 0.5 : 0)
+    if catchup: points *= 0.5                   // bonus included
+```
+
+- **First to finish**: the finished attempt with the earliest `updatedAt` for that day, win
+  or lose. A failed first finisher still gets 0 points.
+- **Catch-up**: an attempt completed on a later Paris-local day than `gameDate`.
+
+Examples (par 4): score 4 → 3, score 1 → 6, score 6 → 2, score 4 first → 3.5,
+score 4 catch-up → 1.5, score 4 first + catch-up → 1.75.
+
+#### Result visibility
+On a day's scoreboard, a player's score, letter sequence and points are shown to the
+caller only when that player has finished and either the player is the caller or the
+caller has finished the day too. Otherwise only the name and the `finished` flag are
+shown. This way nobody sees letter feedback before playing.
+
+### Postgres
+
+This app reads from (no schema ownership):
+
+**`auth_user`** — `first_name` for scoreboard and leaderboard entries.
+
+This app owns the schema and data for:
+
+**`portal_sutom_word`** → `DailyWord`
+| Column | Type | Notes |
+|--------|------|-------|
+| `game_date` | DATE PK | Europe/Paris day |
+| `word` | TEXT | cleaned word of the day |
+| `possible_words` | TEXT[] | cleaned dictionary for that length / first letter |
+| `puzzle_number` | INT NOT NULL | source site numbering, backfilled in `0017` |
+| `par` | INT nullable | frozen par, set once by the nightly task |
+| `created_at` | TIMESTAMPTZ | default `now()` |
+
+**`portal_sutom_attempt`** → `Attempt`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | SERIAL PK | |
+| `user_id` | INT | FK → `auth_user.id`, cascade delete |
+| `game_date` | DATE | FK → `portal_sutom_word.game_date`, cascade delete |
+| `guesses` | TEXT[] | default `'{}'` |
+| `score` | INT nullable | null while in progress |
+| `updated_at` | TIMESTAMPTZ | default `now()`, refreshed on each submission |
+
+Constraint: `UNIQUE (user_id, game_date)`.
+
+### Edges
+
+#### SUTOM source site
+Base URL `https://sutom.nocle.fr`, public instance game id
+`34ccc522-c264-4e51-b293-fd5bd60ef7aa` (from `js/instanceConfiguration.js`).
+
+- **Word of the day** — `GET /mots/{base64("{gameId}-{YYYY-MM-DD}")}.txt`, reproducing
+  `Dictionnaire.getNomFichier`. The body is the raw word, then cleaned. A non-2xx
+  response means the word isn't published yet.
+- **Dictionary** — `GET /js/mots/listeMotsProposables.{length}.{FIRST_LETTER}.js`, an AMD
+  module. The quoted entries of `ListeMotsProposables.Dictionnaire = [...]` are
+  extracted and cleaned. Every valid guess shares the target's length and first letter,
+  so this one list is enough to validate a whole day.
+
+Requests use the `coworker-portal-sutom/1.0` user agent. Source failures are returned as
+`AppError::External`.
+
+### Features
+
+All routes are mounted under `/api` and require authentication. Endpoints that take a
+`{date}` reject dates outside the playable window (future dates, or older than 30
+days) with `400` *"Cette date n'est pas jouable."*
+
+#### Lazy word caching
+`ensure_daily_word(date)` returns the stored `DailyWord`. If it isn't stored yet, it
+fetches the word and dictionary from the source site, upserts them, and returns them.
+Every route that needs the day's word goes through it, so a day becomes playable even if
+the nightly task failed.
+
+#### Play a day
+- `GET /sutom/today` — today's puzzle (Paris time) and the caller's progress.
+- `GET /sutom/day/{date}` — same for a past day within the window.
+
+Both return `date`, `puzzle_number`, `word`, `possible_words`, the effective `par`,
+`my_guesses` and `my_score`. The target word is sent to the client, which computes
+letter feedback locally, so this is a trust-based game.
+
+#### Submit guesses
+- `PUT /sutom/day/{date}/attempt` with `{ guesses: [string] }` — replaces the caller's
+  full list of guesses for that day:
+  - rejects more than `MAX_ATTEMPTS` guesses
+  - rejects if the caller's attempt for that day is already finished
+  - cleans and validates every guess (see [Guess validation](#guess-validation))
+  - recomputes `score` and upserts the attempt
+  - returns `{ score }`
+
+#### Day scoreboard
+- `GET /sutom/day/{date}/scoreboard` — every player who has started the day. Finished
+  players come first (best score first), then unfinished ones, then by first name. Each
+  entry has `finished`, `revealed`, `first_to_finish` and, when revealed, `score`, the
+  per-guess `sequence` of `LetterStatus` and the day's `points` (computed with the
+  effective par). See [Result visibility](#result-visibility).
+
+#### Leaderboard
+- `GET /sutom/leaderboard` — total points per player over the last 30 days (`since` =
+  window start), sorted by points descending, with `games_played`. Only finished
+  attempts on days with a **frozen** par count, so today's games are added after the
+  nightly task.
+
+#### History
+- `GET /sutom/history` — every stored day in the window (most recent first), with its
+  `puzzle_number` and the caller's `my_score` (null if not played or unfinished).
+
+#### Nightly refresh
+Background task, run in Europe/Paris time:
+1. Freeze yesterday's par (no-op if already set or nobody finished).
+2. Warm today's word with `ensure_daily_word(today)`.
+
+Failures are logged and do not stop the scheduler. The cron expression is validated at
+startup, and an invalid one stops the server from starting.
+
+**Environment variable:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SUTOM_REFRESH_CRON` | `0 5 0 * * *` | 6-field cron expression for the nightly refresh (00:05 Paris), evaluated in Europe/Paris timezone |
