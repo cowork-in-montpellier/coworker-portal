@@ -54,10 +54,13 @@ pub async fn submit_guesses(
     let daily = service::ensure_daily_word(&state, date)
         .await
         .map_err(|e| AppError::External(e.to_string()))?;
+    let possible_words = service::possible_words(&state, &daily.word)
+        .await
+        .map_err(|e| AppError::External(e.to_string()))?;
 
     let cleaned: Vec<String> = body.guesses.iter().map(|g| domain::clean_word(g)).collect();
     for guess in &cleaned {
-        domain::validate_guess(&daily.word, &daily.possible_words, guess).map_err(AppError::BadRequest)?;
+        domain::validate_guess(&daily.word, &possible_words, guess).map_err(AppError::BadRequest)?;
     }
 
     let score = domain::score_for(&daily.word, &cleaned);

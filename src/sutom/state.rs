@@ -4,6 +4,7 @@ use crate::users::auth::HasJwt;
 use crate::users::jwt::JwtService;
 
 use super::config::Config;
+use super::dictionary::DictionaryCache;
 
 #[derive(Clone)]
 pub struct State {
@@ -11,6 +12,7 @@ pub struct State {
     pub http: reqwest::Client,
     pub jwt: Arc<JwtService>,
     pub config: Arc<Config>,
+    pub dictionaries: Arc<DictionaryCache>,
 }
 
 impl HasJwt for State {

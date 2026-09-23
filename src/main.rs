@@ -111,6 +111,7 @@ async fn main() -> Result<()> {
         db: db.clone(),
         http: reqwest::Client::builder().user_agent("coworker-portal-sutom/1.0").build()?,
         jwt: jwt.clone(),
+        dictionaries: Arc::new(sutom::dictionary::DictionaryCache::new(sutom_config.dictionary_ttl)),
         config: Arc::new(sutom_config),
     };
 

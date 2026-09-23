@@ -336,6 +336,8 @@ export function Sutom() {
   const [currentGuess, setCurrentGuess] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  // Bumped by the retry button to re-run the day load after a failure.
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   // How many letters of the most recently submitted row currently show their color.
   // Starts at Infinity so guesses loaded from the server render fully revealed.
@@ -377,7 +379,7 @@ export function Sutom() {
       .catch(() => {
         /* non-fatal */
       })
-  }, [viewedDate])
+  }, [viewedDate, loadAttempt])
 
   const refreshScoreboard = useCallback((date: string) => {
     fetchScoreboard(date)
@@ -498,8 +500,11 @@ export function Sutom() {
     return (
       <div className="min-h-screen bg-base-200 flex flex-col">
         <Navbar />
-        <main className="flex-1 flex items-center justify-center">
+        <main className="flex-1 flex flex-col items-center justify-center gap-3">
           <p className="text-sm text-base-content/60">Impossible de charger ce mot du jour.</p>
+          <button className="btn btn-sm btn-primary" onClick={() => setLoadAttempt((n) => n + 1)}>
+            Réessayer
+          </button>
         </main>
       </div>
     )
