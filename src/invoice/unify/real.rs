@@ -76,6 +76,31 @@ impl RealUnifyClient {
         tracing::debug!(total = online.len(), "Unify hotspot clients online");
         Ok(online)
     }
+
+    async fn macs_for_voucher(&self, unify_id: &str) -> Result<Vec<String>> {
+        let url = format!("{}/api/s/{}/stat/guest", self.base_url, self.site);
+        // POST with `within` (hours) per the Unify API spec; 720h = 30 days
+        let body = serde_json::json!({ "within": 720 });
+        let resp: GuestListResponse = self
+            .send_with_retry(|| self.client.post(&url).json(&body))
+            .await?
+            .json()
+            .await?;
+        let macs = resp.data.into_iter()
+            .filter(|g| !g.expired)
+            .filter(|g| g.voucher_id.as_deref() == Some(unify_id))
+            .map(|g| g.mac)
+            .collect();
+        Ok(macs)
+    }
+
+    async fn unauthorize_guest(&self, mac: &str) -> Result<()> {
+        let body = serde_json::json!({ "cmd": "unauthorize-guest", "mac": mac });
+        let url = format!("{}/api/s/{}/cmd/stamgr", self.base_url, self.site);
+        tracing::debug!(%url, %mac, "Unauthorizing Unify guest");
+        self.send_with_retry(|| self.client.post(&url).json(&body)).await?;
+        Ok(())
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -225,25 +250,36 @@ impl UnifyClient for RealUnifyClient {
     }
 
     async fn revoke_voucher(&self, unify_id: &str) -> Result<()> {
+        // Find which MACs are currently authenticated with this voucher before deleting it.
+        let macs = self.macs_for_voucher(unify_id).await.unwrap_or_else(|e| {
+            tracing::warn!(unify_id, error = %e, "Could not query guest MACs before revocation; will skip unauthorize step");
+            vec![]
+        });
+
         let body = serde_json::json!({ "cmd": "delete-voucher", "_id": unify_id });
         let url = format!("{}/api/s/{}/cmd/hotspot", self.base_url, self.site);
         tracing::debug!(%url, unify_id, "Revoking Unify voucher");
         self.send_with_retry(|| self.client.post(&url).json(&body)).await?;
+
+        // Terminate each active guest session so clients are immediately kicked off the network.
+        for mac in &macs {
+            if let Err(e) = self.unauthorize_guest(mac).await {
+                tracing::warn!(%mac, error = %e, "Failed to unauthorize guest after voucher revocation");
+            }
+        }
         Ok(())
     }
 
     async fn get_active_guests(&self) -> Result<Vec<super::ActiveGuest>> {
-        let end_ms = chrono::Utc::now().timestamp_millis();
-        let start_ms = end_ms - chrono::Duration::days(30).num_milliseconds();
         let url = format!("{}/api/s/{}/stat/guest", self.base_url, self.site);
-        tracing::debug!(%url, start_ms, end_ms, "Querying Unify active guests (30-day window)");
+        // POST with `within` (hours) per the Unify API spec; 720h = 30 days
+        let guest_body = serde_json::json!({ "within": 720 });
+        tracing::debug!(%url, "Querying Unify active guests (30-day window)");
 
         let (resp, connected) = tokio::try_join!(
             async {
                 let r: GuestListResponse = self
-                    .send_with_retry(|| {
-                        self.client.get(&url).query(&[("start", start_ms), ("end", end_ms)])
-                    })
+                    .send_with_retry(|| self.client.post(&url).json(&guest_body))
                     .await?
                     .json()
                     .await?;
