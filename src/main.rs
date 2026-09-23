@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
     let unify_client: Arc<dyn invoice::unify::UnifyClient> = match invoice_config.unify.mode {
         invoice::config::UnifyMode::Mock => {
             tracing::info!("Unify: using mock client");
-            Arc::new(invoice::unify::mock::MockUnifyClient)
+            Arc::new(invoice::unify::mock::MockUnifyClient::default())
         }
         invoice::config::UnifyMode::Real => {
             tracing::info!("Unify: connecting to {}", invoice_config.unify.base_url);

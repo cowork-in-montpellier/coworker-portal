@@ -9,6 +9,7 @@ const VoucherSchema = z.object({
   duration: z.number(),
   status: z.string(),
   active_days_count: z.number(),
+  unify_create_time: z.number(),
 })
 
 const BillLineSchema = z.object({
@@ -77,6 +78,14 @@ export async function checkVouchers(billId: number): Promise<VoucherStatusEntry[
 export const revokeVoucher = (billId: number, unifyId: string) =>
   apiFetch<unknown>(`/api/bills/${billId}/vouchers/${unifyId}/revoke`, { method: 'POST' })
 
+export const splitVoucher = (billId: number, unifyId: string) =>
+  apiFetch<unknown>(`/api/bills/${billId}/vouchers/${unifyId}/split`, { method: 'POST' })
+
+export async function getBill(billId: number): Promise<Bill> {
+  const raw = await apiFetch<unknown>(`/api/bills/${billId}`)
+  return BillSchema.parse(raw)
+}
+
 export async function downloadBillPdf(billId: number, billNumber: string): Promise<void> {
   const res = await fetch(`/api/bills/${billId}/pdf`, {
     headers: { Authorization: `Bearer ${localStorage.getItem('token') ?? ''}` },
@@ -90,7 +99,6 @@ export async function downloadBillPdf(billId: number, billNumber: string): Promi
   a.click()
   URL.revokeObjectURL(url)
 }
-
 
 export async function listBills(query: BillsQuery = {}): Promise<ListBillsResponse> {
   const params = new URLSearchParams()
