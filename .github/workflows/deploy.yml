@@ -1,0 +1,81 @@
+name: Deploy
+
+# Manual deploy of `main` to the Raspberry Pi.
+#
+# The Pi is not reachable from the internet, so it runs a GitHub Actions self-hosted
+# runner (labels: self-hosted, linux, ARM64) that pulls the deploy job. The build runs on
+# a GitHub-hosted runner; only the install step runs on the Pi.
+#
+# One-time setup on the Pi:
+#   - install the runner as a service (Settings → Actions → Runners → New self-hosted runner, then `sudo ./svc.sh install`)
+#   - create /etc/coworker-portal/env (see install/install.sh for the required variables)
+#   - let the runner user run the install script as root without a password, e.g. in /etc/sudoers.d/coworker-portal:
+#       <runner-user> ALL=(root) NOPASSWD: <runner-dir>/_work/_temp/coworker-portal-release/install/install.sh
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  ARCHIVE_NAME: coworker-portal-aarch64-unknown-linux-gnu.tar.gz
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-unknown-linux-gnu
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build release archive
+        run: ./scripts/release.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coworker-portal-release
+          path: ${{ env.ARCHIVE_NAME }}
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, linux, ARM64]
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: coworker-portal-release
+          path: ${{ runner.temp }}
+
+      - name: Extract release
+        run: |
+          RELEASE_DIR="${RUNNER_TEMP}/coworker-portal-release"
+          rm -rf "${RELEASE_DIR}"
+          mkdir -p "${RELEASE_DIR}"
+          tar -xzf "${RUNNER_TEMP}/${ARCHIVE_NAME}" -C "${RELEASE_DIR}"
+
+      - name: Install
+        run: sudo "${RUNNER_TEMP}/coworker-portal-release/install/install.sh"
+
+      - name: Clean up
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/coworker-portal-release" "${RUNNER_TEMP}/${ARCHIVE_NAME}"
