@@ -5,7 +5,6 @@ use sqlx::PgPool;
 
 pub struct DailyWord {
     pub word: String,
-    pub possible_words: Vec<String>,
     pub puzzle_number: i32,
     pub par: Option<i32>,
 }
@@ -13,14 +12,13 @@ pub struct DailyWord {
 #[derive(sqlx::FromRow)]
 struct DailyWordRow {
     word: String,
-    possible_words: Vec<String>,
     puzzle_number: i32,
     par: Option<i32>,
 }
 
 pub async fn get_by_date(db: &PgPool, date: NaiveDate) -> Result<Option<DailyWord>, sqlx::Error> {
     let row = sqlx::query_as::<_, DailyWordRow>(
-        "SELECT word, possible_words, puzzle_number, par FROM portal_sutom_word WHERE game_date = $1",
+        "SELECT word, puzzle_number, par FROM portal_sutom_word WHERE game_date = $1",
     )
     .bind(date)
     .fetch_optional(db)
@@ -28,7 +26,6 @@ pub async fn get_by_date(db: &PgPool, date: NaiveDate) -> Result<Option<DailyWor
 
     Ok(row.map(|r| DailyWord {
         word: r.word,
-        possible_words: r.possible_words,
         puzzle_number: r.puzzle_number,
         par: r.par,
     }))
@@ -38,17 +35,15 @@ pub async fn upsert_word(
     db: &PgPool,
     date: NaiveDate,
     word: &str,
-    possible_words: &[String],
     puzzle_number: i32,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO portal_sutom_word (game_date, word, possible_words, puzzle_number)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (game_date) DO UPDATE SET word = EXCLUDED.word, possible_words = EXCLUDED.possible_words",
+        "INSERT INTO portal_sutom_word (game_date, word, puzzle_number)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (game_date) DO UPDATE SET word = EXCLUDED.word",
     )
     .bind(date)
     .bind(word)
-    .bind(possible_words)
     .bind(puzzle_number)
     .execute(db)
     .await?;

@@ -701,13 +701,23 @@ DailyWord : The puzzle of one day, mirrored from the source site and cached loca
 type DailyWord = {
     gameDate: Date         // Europe/Paris calendar day — the identity of the puzzle
     word: string           // cleaned target word (uppercase, no accents), e.g. "BLOUSON"
-    possibleWords: [string] // guessable dictionary: every word with the same length and first letter as `word`
     puzzleNumber: int      // the source site's "SUTOM #N" numbering, see PuzzleNumber below
     par: int | null        // ceil(avg(score)) of the day's finished attempts, frozen once computed
 
-    // invariant: word and possibleWords are stored already cleaned (see Word normalization)
+    // invariant: word is stored already cleaned (see Word normalization)
     // invariant: puzzleNumber = (gameDate - 2022-01-08) + 1
     // invariant: once set, par never changes, even if more players catch up on that day later
+}
+```
+
+Dictionary : The guessable words for one word shape. It is not stored in the database: it
+is shared by every day with the same length and first letter, so it lives in an in-memory
+cache (see [Dictionary cache](#dictionary-cache)).
+```typescript
+type Dictionary = {
+    length: int        // cache key, with firstLetter
+    firstLetter: char
+    words: [string]    // cleaned words; a guess is valid only if it is in this list
 }
 ```
 
@@ -722,7 +732,7 @@ type Attempt = {
 
     // invariant: one attempt per (userId, gameDate)
     // invariant: guesses.length <= MAX_ATTEMPTS (6)
-    // invariant: every guess has the target's length, starts with its first letter and is in possibleWords
+    // invariant: every guess has the target's length, starts with its first letter and is in the Dictionary for that shape
     // invariant: once score is set the attempt is finished and immutable
 }
 ```
@@ -756,6 +766,8 @@ implements anything for `sutom`.
 
 - **`sutom::source`** — HTTP client for the source site (`https://sutom.nocle.fr`), see
   [Edges](#edges-1).
+- **`sutom::dictionary::DictionaryCache`** — in-memory dictionary cache held in
+  `sutom::State`, see [Dictionary cache](#dictionary-cache).
 - **`sutom::tasks::refresh`** — nightly background task, see
   [Nightly refresh](#nightly-refresh).
 
@@ -775,7 +787,7 @@ validation, so comparisons are always between cleaned words.
 A guess is rejected (`400`) with the source site's own messages, in this order:
 1. wrong length → *"Le mot proposé n'a pas la bonne longueur."*
 2. different first letter → *"Le mot proposé doit commencer par la même lettre que le mot recherché."*
-3. not in `possibleWords` → *"Ce mot n'est pas dans notre dictionnaire."*
+3. not in the day's `Dictionary` → *"Ce mot n'est pas dans notre dictionnaire."*
 
 #### Letter scoring
 `score_guess` mirrors the source site's `analyserMot`:
@@ -839,8 +851,7 @@ This app owns the schema and data for:
 |--------|------|-------|
 | `game_date` | DATE PK | Europe/Paris day |
 | `word` | TEXT | cleaned word of the day |
-| `possible_words` | TEXT[] | cleaned dictionary for that length / first letter |
-| `puzzle_number` | INT NOT NULL | source site numbering, backfilled in `0017` |
+| `puzzle_number` | INT NOT NULL | source site numbering |
 | `par` | INT nullable | frozen par, set once by the nightly task |
 | `created_at` | TIMESTAMPTZ | default `now()` |
 
@@ -881,9 +892,23 @@ days) with `400` *"Cette date n'est pas jouable."*
 
 #### Lazy word caching
 `ensure_daily_word(date)` returns the stored `DailyWord`. If it isn't stored yet, it
-fetches the word and dictionary from the source site, upserts them, and returns them.
-Every route that needs the day's word goes through it, so a day becomes playable even if
-the nightly task failed.
+fetches the word from the source site, upserts it, and returns it. Every route that needs
+the day's word goes through it, so a day becomes playable even if the nightly task failed.
+
+#### Dictionary cache
+`possible_words(word)` returns the dictionary for the word's length and first letter from
+`DictionaryCache`, an in-memory map keyed by `(length, firstLetter)`:
+- **miss** → fetched from the source site, stored, returned
+- **hit** → returned, and its last-hit time is refreshed
+- **eviction** → time-to-idle (`moka` `time_to_idle`): an entry not read for `SUTOM_DICTIONARY_TTL_SECS` is
+  dropped. Concurrent misses on the same key share one fetch; failed fetches are not cached.
+
+The cache is per process and starts empty on restart. It is used by the day routes (for
+`possible_words` in the response) and by guess validation.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SUTOM_DICTIONARY_TTL_SECS` | `86400` | seconds a dictionary stays cached without being read |
 
 #### Play a day
 - `GET /sutom/today` — today's puzzle (Paris time) and the caller's progress.
@@ -922,7 +947,7 @@ letter feedback locally, so this is a trust-based game.
 #### Nightly refresh
 Background task, run in Europe/Paris time:
 1. Freeze yesterday's par (no-op if already set or nobody finished).
-2. Warm today's word with `ensure_daily_word(today)`.
+2. Warm today's word with `ensure_daily_word(today)`, then its dictionary in the cache.
 
 Failures are logged and do not stop the scheduler. The cron expression is validated at
 startup, and an invalid one stops the server from starting.

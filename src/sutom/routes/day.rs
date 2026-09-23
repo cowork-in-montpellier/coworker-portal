@@ -26,6 +26,9 @@ async fn build_day_response(
     user: &CurrentUser,
 ) -> Result<DayResponse, AppError> {
     let daily = service::ensure_daily_word(state, date).await.map_err(|e| AppError::External(e.to_string()))?;
+    let possible_words = service::possible_words(state, &daily.word)
+        .await
+        .map_err(|e| AppError::External(e.to_string()))?;
     let attempt = repository::get_attempt(&state.db, user.id, date).await?;
     let par = service::effective_par(state, date, daily.par).await?;
 
@@ -33,7 +36,7 @@ async fn build_day_response(
         date,
         puzzle_number: daily.puzzle_number,
         word: daily.word,
-        possible_words: daily.possible_words,
+        possible_words: possible_words.to_vec(),
         par,
         my_guesses: attempt.as_ref().map(|a| a.guesses.clone()).unwrap_or_default(),
         my_score: attempt.and_then(|a| a.score),

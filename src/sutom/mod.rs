@@ -1,4 +1,5 @@
 pub mod config;
+pub mod dictionary;
 pub mod domain;
 pub mod openapi;
 pub mod repository;

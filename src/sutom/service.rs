@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
 
@@ -6,22 +8,27 @@ use super::{domain, repository, source, state::State};
 /// Size of the "play a previous day" window, inclusive of today.
 pub const HISTORY_WINDOW_DAYS: i64 = 30;
 
-/// Returns today's word and dictionary, fetching and caching it from the source site
-/// on first use of the day (the cron task normally warms this before anyone asks).
+/// Returns a day's word, fetching and storing it from the source site on first use of
+/// the day (the cron task normally warms this before anyone asks).
 pub async fn ensure_daily_word(state: &State, date: NaiveDate) -> Result<repository::DailyWord> {
     if let Some(existing) = repository::get_by_date(&state.db, date).await? {
         return Ok(existing);
     }
 
     let word = source::fetch_word_of_day(&state.http, date).await?;
-    let first_letter = word.chars().next().context("SUTOM word of the day was empty")?;
-    let length = word.chars().count();
-    let possible_words = source::fetch_possible_words(&state.http, length, first_letter).await?;
     let puzzle_number = domain::puzzle_number(date);
 
-    repository::upsert_word(&state.db, date, &word, &possible_words, puzzle_number).await?;
+    repository::upsert_word(&state.db, date, &word, puzzle_number).await?;
 
-    Ok(repository::DailyWord { word, possible_words, puzzle_number, par: None })
+    Ok(repository::DailyWord { word, puzzle_number, par: None })
+}
+
+/// The guessable-words dictionary for a target word: every word with its length and
+/// first letter, served from the in-memory cache and fetched from the source site on a miss.
+pub async fn possible_words(state: &State, word: &str) -> Result<Arc<Vec<String>>> {
+    let first_letter = word.chars().next().context("SUTOM word of the day was empty")?;
+    let length = word.chars().count();
+    state.dictionaries.get(&state.http, length, first_letter).await
 }
 
 pub fn today_paris() -> NaiveDate {

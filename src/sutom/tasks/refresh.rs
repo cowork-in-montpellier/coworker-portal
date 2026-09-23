@@ -12,7 +12,10 @@ pub async fn run(state: &State) {
     tracing::info!(date = %today, "Sutom refresh: starting");
     match service::ensure_daily_word(state, today).await {
         Ok(daily) => {
-            tracing::info!(date = %today, length = daily.word.chars().count(), "Sutom refresh: done")
+            tracing::info!(date = %today, length = daily.word.chars().count(), "Sutom refresh: done");
+            if let Err(e) = service::possible_words(state, &daily.word).await {
+                tracing::error!(date = %today, error = %e, "Sutom refresh: dictionary warm-up failed");
+            }
         }
         Err(e) => tracing::error!(date = %today, error = %e, "Sutom refresh: failed"),
     }
