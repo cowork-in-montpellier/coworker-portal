@@ -42,6 +42,12 @@ pub fn puzzle_number(date: NaiveDate) -> i32 {
     (date - origin).num_days() as i32 + 1
 }
 
+/// The day the general leaderboard competition officially started. Earlier days are
+/// playable (warm-up/training) but never count toward leaderboard points.
+pub fn leaderboard_start_date() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 9, 23).expect("valid leaderboard start date")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LetterStatus {

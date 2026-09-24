@@ -10,6 +10,7 @@ const DaySchema = z.object({
   word: z.string(),
   possible_words: z.array(z.string()),
   par: z.number().nullable(),
+  par_average: z.number().nullable(),
   my_guesses: z.array(z.string()),
   my_score: z.number().nullable(),
 })
@@ -23,6 +24,7 @@ const ScoreboardPlayerSchema = z.object({
   score: z.number().nullable(),
   sequence: z.array(z.array(LetterStatusSchema)).nullable(),
   first_to_finish: z.boolean(),
+  is_catchup: z.boolean(),
   points: z.number().nullable(),
 })
 export type ScoreboardPlayer = z.infer<typeof ScoreboardPlayerSchema>
@@ -38,6 +40,7 @@ const LeaderboardEntrySchema = z.object({
   first_name: z.string(),
   points: z.number(),
   games_played: z.number(),
+  points_per_day: z.number(),
 })
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>
 
@@ -82,8 +85,8 @@ export async function fetchScoreboard(date: string): Promise<Scoreboard> {
   return ScoreboardSchema.parse(await apiFetch(`/api/sutom/day/${date}/scoreboard`))
 }
 
-export async function fetchLeaderboard(): Promise<Leaderboard> {
-  return LeaderboardSchema.parse(await apiFetch('/api/sutom/leaderboard'))
+export async function fetchLeaderboard(includeToday = true): Promise<Leaderboard> {
+  return LeaderboardSchema.parse(await apiFetch(`/api/sutom/leaderboard?include_today=${includeToday}`))
 }
 
 export async function fetchHistory(): Promise<History> {

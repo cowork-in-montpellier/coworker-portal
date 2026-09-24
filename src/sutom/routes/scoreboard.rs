@@ -13,14 +13,19 @@ pub struct ScoreboardPlayer {
     pub first_name: String,
     /// True once this player has solved or exhausted their attempts for the day.
     pub finished: bool,
-    /// True if `score`/`sequence` are populated. Other players' results stay hidden
-    /// from the caller until the caller has finished their own game for the day, so
-    /// nobody can peek at letter feedback before playing.
+    /// True once `sequence` is populated. The letter-by-letter grid stays hidden from
+    /// the caller until the caller has finished their own game for the day, so nobody
+    /// can peek at letter feedback before playing. `score`/`points` are not gated by
+    /// this — they're visible to everyone as soon as a player finishes, since a bare
+    /// number doesn't leak anything about the word itself.
     pub revealed: bool,
     pub score: Option<i32>,
     pub sequence: Option<Vec<Vec<domain::LetterStatus>>>,
     /// True for whoever finished this day's puzzle earliest, win or lose.
     pub first_to_finish: bool,
+    /// True if this was a later catch-up play rather than played on the day itself —
+    /// halves the points. Lets the UI explain a player's point total precisely.
+    pub is_catchup: bool,
     /// This day's leaderboard points for the player, once revealed.
     pub points: Option<f64>,
 }
@@ -74,9 +79,9 @@ pub async fn get_scoreboard(
             let sequence = revealed
                 .then(|| a.guesses.iter().map(|g| domain::score_guess(&daily.word, g)).collect());
             let is_first = Some(a.user_id) == first_finisher_id;
-            let points = match (revealed, par, a.score) {
+            let is_catchup = domain::is_catchup_play(date, a.updated_at);
+            let points = match (finished, par, a.score) {
                 (true, Some(par), Some(score)) => {
-                    let is_catchup = domain::is_catchup_play(date, a.updated_at);
                     Some(domain::leaderboard_points(par, score, is_first, is_catchup))
                 }
                 _ => None,
@@ -87,9 +92,10 @@ pub async fn get_scoreboard(
                 first_name: a.first_name,
                 finished,
                 revealed,
-                score: if revealed { a.score } else { None },
+                score: a.score,
                 sequence,
                 first_to_finish: is_first,
+                is_catchup,
                 points,
             }
         })
