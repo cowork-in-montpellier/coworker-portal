@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 use anyhow::Result;
 use async_trait::async_trait;
 use rand::Rng;
@@ -6,7 +7,14 @@ use rand::Rng;
 use crate::invoice::domain::VoucherStatus;
 use super::{ActiveGuest, CreateVouchersRequest, UnifyClient, UnifyVoucher};
 
-pub struct MockUnifyClient;
+/// Mimics Unify without a real controller. Status is tracked deterministically
+/// (a voucher is Valid until `revoke_voucher` is called on it) rather than
+/// randomized, so local testing of revoke/split flows reflects real actions
+/// instead of noise.
+#[derive(Default)]
+pub struct MockUnifyClient {
+    revoked: Mutex<HashSet<String>>,
+}
 
 #[async_trait]
 impl UnifyClient for MockUnifyClient {
@@ -32,12 +40,12 @@ impl UnifyClient for MockUnifyClient {
         _note: &str,
         unify_ids: &[String],
     ) -> Result<HashMap<String, VoucherStatus>> {
-        let mut rng = rand::thread_rng();
+        let revoked = self.revoked.lock().unwrap();
         Ok(unify_ids
             .iter()
             .map(|id| {
-                let status = if rng.gen_bool(0.3) {
-                    VoucherStatus::Used
+                let status = if revoked.contains(id) {
+                    VoucherStatus::Expired
                 } else {
                     VoucherStatus::Valid
                 };
@@ -48,6 +56,7 @@ impl UnifyClient for MockUnifyClient {
     }
 
     async fn revoke_voucher(&self, unify_id: &str) -> Result<()> {
+        self.revoked.lock().unwrap().insert(unify_id.to_string());
         tracing::debug!(unify_id = %unify_id, "mock: revoked voucher");
         Ok(())
     }

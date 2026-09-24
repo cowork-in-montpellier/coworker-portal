@@ -49,6 +49,7 @@ pub enum VoucherStatus {
     Valid,
     Used,
     Expired,
+    Revoked,
     Unknown,
 }
 
@@ -58,6 +59,7 @@ impl VoucherStatus {
             VoucherStatus::Valid => "Valid",
             VoucherStatus::Used => "Used",
             VoucherStatus::Expired => "Expired",
+            VoucherStatus::Revoked => "Revoked",
             VoucherStatus::Unknown => "Unknown",
         }
     }
@@ -69,6 +71,7 @@ impl From<&str> for VoucherStatus {
             "Valid" => VoucherStatus::Valid,
             "Used" => VoucherStatus::Used,
             "Expired" => VoucherStatus::Expired,
+            "Revoked" => VoucherStatus::Revoked,
             _ => VoucherStatus::Unknown,
         }
     }
