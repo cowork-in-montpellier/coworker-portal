@@ -16,6 +16,9 @@ pub struct DayResponse {
     /// The frozen par once the nightly job has computed it, otherwise a live estimate
     /// from whoever has finished the day so far (changes as more players finish).
     pub par: Option<i32>,
+    /// The raw (unrounded) average score behind `par`, so a nearly-tipping-over par
+    /// value can be told apart from a comfortable one.
+    pub par_average: Option<f64>,
     pub my_guesses: Vec<String>,
     pub my_score: Option<i32>,
 }
@@ -31,6 +34,7 @@ async fn build_day_response(
         .map_err(|e| AppError::External(e.to_string()))?;
     let attempt = repository::get_attempt(&state.db, user.id, date).await?;
     let par = service::effective_par(state, date, daily.par).await?;
+    let par_average = repository::average_score(&state.db, date).await?;
 
     Ok(DayResponse {
         date,
@@ -38,6 +42,7 @@ async fn build_day_response(
         word: daily.word,
         possible_words: possible_words.to_vec(),
         par,
+        par_average,
         my_guesses: attempt.as_ref().map(|a| a.guesses.clone()).unwrap_or_default(),
         my_score: attempt.and_then(|a| a.score),
     })

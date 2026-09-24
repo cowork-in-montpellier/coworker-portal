@@ -62,17 +62,21 @@ pub async fn set_par_if_missing(db: &PgPool, date: NaiveDate, par: i32) -> Resul
     Ok(())
 }
 
-/// Computes ceil(avg(score)) among finished attempts for a date, or `None` if nobody
-/// finished that day.
-pub async fn average_score_ceil(db: &PgPool, date: NaiveDate) -> Result<Option<i32>, sqlx::Error> {
-    let avg: Option<f64> = sqlx::query_scalar(
+/// Raw (unrounded) average score among finished attempts for a date, or `None` if
+/// nobody finished that day.
+pub async fn average_score(db: &PgPool, date: NaiveDate) -> Result<Option<f64>, sqlx::Error> {
+    sqlx::query_scalar(
         "SELECT AVG(score)::float8 FROM portal_sutom_attempt WHERE game_date = $1 AND score IS NOT NULL",
     )
     .bind(date)
     .fetch_one(db)
-    .await?;
+    .await
+}
 
-    Ok(avg.map(|a| a.ceil() as i32))
+/// Computes ceil(avg(score)) among finished attempts for a date, or `None` if nobody
+/// finished that day.
+pub async fn average_score_ceil(db: &PgPool, date: NaiveDate) -> Result<Option<i32>, sqlx::Error> {
+    Ok(average_score(db, date).await?.map(|a| a.ceil() as i32))
 }
 
 pub async fn list_recent_dates(

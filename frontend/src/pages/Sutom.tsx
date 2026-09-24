@@ -26,6 +26,9 @@ const FAILED_SCORE = MAX_ATTEMPTS + 1
 const HISTORY_WINDOW_DAYS = 30
 // Delay between each letter's color reveal on a freshly submitted guess.
 const REVEAL_DELAY_MS = 300
+// Mirrors the backend's leaderboard_start_date(): days before this were warm-up/training
+// and never count toward leaderboard points.
+const LEADERBOARD_START_DATE = '2026-09-23'
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -178,11 +181,17 @@ function buildShareText(puzzleNumber: number, target: string, guesses: string[],
 }
 
 // Golf-style badge for a score relative to par: eagle (2 under) beats birdie (1 under).
-function golfEmoji(par: number | null, score: number | null): string {
-  if (par == null || score == null) return ''
-  if (score <= par - 2) return ' 🦅'
-  if (score === par - 1) return ' 🐦'
-  return ''
+function golfBadge(par: number | null, score: number | null): { emoji: string; title: string } | null {
+  if (par == null || score == null) return null
+  if (score <= par - 2) return { emoji: '🦅', title: 'Eagle' }
+  if (score === par - 1) return { emoji: '🐦', title: 'Birdie' }
+  return null
+}
+
+// Mirrors the backend's leaderboard_points formula for a plain (no bonus, no catchup)
+// score relative to a given par — used to render the reference table in the info modal.
+function basePoints(par: number, score: number): number {
+  return 3 + (par - score) / (score > par ? 2 : 1)
 }
 
 function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; par: number | null }) {
@@ -195,41 +204,56 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
 
   return (
     <ul className="flex flex-col gap-1.5">
-      {scoreboard.players.map((p: ScoreboardPlayer) => (
-        <li key={p.user_id} className="border border-base-200 rounded-lg overflow-hidden">
-          <button
-            className="w-full flex items-center justify-between px-3 py-2 text-sm disabled:cursor-default enabled:hover:bg-base-200 enabled:cursor-pointer transition-colors"
-            onClick={() => setExpanded((e) => (e === p.user_id ? null : p.user_id))}
-            disabled={!p.revealed}
-            title={p.revealed ? 'Voir le détail' : undefined}
-          >
-            <span>
-              {p.first_name}
-              {p.first_to_finish && <span title="Premier à finir"> 🥇</span>}
-              {golfEmoji(par, p.score)}
-            </span>
-            {p.revealed ? (
-              <span className="flex items-center gap-2">
-                <span className="badge badge-sm">{scoreLabel(p.score)}</span>
-                {p.points != null && <span className="text-xs text-base-content/60">{p.points.toFixed(1)} pts</span>}
+      {scoreboard.players.map((p: ScoreboardPlayer, i: number) => {
+        const golf = golfBadge(par, p.score)
+        return (
+          <li key={p.user_id} className="border border-base-200 rounded-lg overflow-hidden">
+            <button
+              className="w-full flex items-center justify-between px-3 py-2 text-sm disabled:cursor-default enabled:hover:bg-base-200 enabled:cursor-pointer transition-colors"
+              onClick={() => setExpanded((e) => (e === p.user_id ? null : p.user_id))}
+              disabled={!p.revealed}
+              title={p.revealed ? 'Voir le détail' : undefined}
+            >
+              <span>
+                {i + 1}. {p.first_name}
+                {p.first_to_finish && <span title="Premier à finir"> 🥇</span>}
+                {golf && <span title={golf.title}> {golf.emoji}</span>}
               </span>
-            ) : (
-              <span className="text-xs text-base-content/40">{p.finished ? 'Terminé' : 'En cours…'}</span>
-            )}
-          </button>
-          {expanded === p.user_id && p.sequence && (
-            <div className="px-3 py-2 flex flex-col gap-0.5">
-              {p.sequence.map((row, i) => (
-                <div key={i} className="flex gap-0.5">
-                  {row.map((status, j) => (
-                    <div key={j} className={`w-4 h-4 rounded-sm ${miniCellClass(status)}`} />
+              {p.finished ? (
+                <span className="flex items-center gap-2">
+                  <span className="badge badge-sm">{scoreLabel(p.score)}</span>
+                  {p.points != null && <span className="text-xs text-base-content/60">{p.points.toFixed(2)} pts</span>}
+                </span>
+              ) : (
+                <span className="text-xs text-base-content/40">En cours…</span>
+              )}
+            </button>
+            {expanded === p.user_id && p.sequence && (
+              <div className="px-3 py-2 flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-0.5">
+                  {p.sequence.map((row, rowIdx) => (
+                    <div key={rowIdx} className="flex gap-0.5">
+                      {row.map((status, j) => (
+                        <div key={j} className={`w-4 h-4 rounded-sm ${miniCellClass(status)}`} />
+                      ))}
+                    </div>
                   ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </li>
-      ))}
+                {par != null && p.score != null && p.points != null && (
+                  <ul className="text-[11px] text-base-content/50 leading-tight pl-3">
+                    <li>
+                      Score {p.score} vs par {par} = {basePoints(par, p.score).toFixed(0)} pts
+                    </li>
+                    {p.first_to_finish && <li>Premier à finir : +0,5 pt</li>}
+                    {p.is_catchup && <li>Rattrapage : × 50%</li>}
+                    <li className="font-medium text-base-content/70">Total : {p.points.toFixed(2)} pts</li>
+                  </ul>
+                )}
+              </div>
+            )}
+          </li>
+        )
+      })}
     </ul>
   )
 }
@@ -246,6 +270,12 @@ function LeaderboardPanel({ leaderboard }: { leaderboard: Leaderboard | null }) 
         <tr>
           <th></th>
           <th>Joueur</th>
+          <th
+            className="text-right text-base-content/40 font-normal"
+            title="Indicatif uniquement, sans effet sur le classement"
+          >
+            Points / jour
+          </th>
           <th className="text-right">Points</th>
         </tr>
       </thead>
@@ -254,7 +284,8 @@ function LeaderboardPanel({ leaderboard }: { leaderboard: Leaderboard | null }) 
           <tr key={e.user_id}>
             <td className="text-base-content/40">{i + 1}</td>
             <td>{e.first_name}</td>
-            <td className="text-right font-semibold">{e.points.toFixed(1)}</td>
+            <td className="text-right text-base-content/50">{e.points_per_day.toFixed(2)}</td>
+            <td className="text-right font-semibold">{e.points.toFixed(2)}</td>
           </tr>
         ))}
       </tbody>
@@ -284,15 +315,35 @@ function PointsInfoModal() {
               encore bouger ; il est ensuite figé pour toujours, même si quelqu'un complète la grille plus tard.
             </p>
             <p>
-              Pour un score donné, les points valent :
-              <br />
-              <code className="text-xs bg-base-200 px-1.5 py-0.5 rounded">
-                3 + (par − score) / (score &gt; par ? 2 : 1)
-              </code>
-              <br />
               Un score égal au par vaut donc 3 points ; chaque coup de moins en rapporte 1 point de plus, chaque coup de
               plus en retire 0,5 point.
             </p>
+            <div className="overflow-x-auto">
+              <table className="table table-xs text-center">
+                <thead>
+                  <tr>
+                    <th className="text-left">Par \ Score</th>
+                    {[1, 2, 3, 4, 5, 6].map((s) => (
+                      <th key={s} className="text-center">
+                        {s}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[1, 2, 3, 4, 5, 6].map((par) => (
+                    <tr key={par}>
+                      <th className="text-left font-normal text-base-content/50">{par}</th>
+                      {[1, 2, 3, 4, 5, 6].map((s) => (
+                        <td key={s} className={s === par ? 'font-semibold' : ''}>
+                          {basePoints(par, s).toFixed(2)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <p>🥇 +0,5 point bonus pour le premier joueur à terminer la grille du jour.</p>
             <p>
               🐦 Birdie (score = par − 1) et 🦅 Eagle (score ≤ par − 2) sont affichés à côté du score, à titre
@@ -344,6 +395,7 @@ export function Sutom() {
   const [revealCount, setRevealCount] = useState(Infinity)
   const [scoreboard, setScoreboard] = useState<Scoreboard | null>(null)
   const [leaderboard, setLeaderboard] = useState<Leaderboard | null>(null)
+  const [includeToday, setIncludeToday] = useState(true)
   const [history, setHistory] = useState<History | null>(null)
   const notify = useToast()
 
@@ -358,7 +410,6 @@ export function Sutom() {
     setCurrentGuess('')
     setRevealCount(Infinity)
     setScoreboard(null)
-
     ;(viewedDate ? fetchDay(viewedDate) : fetchToday())
       .then((d) => {
         setDay(d)
@@ -374,12 +425,20 @@ export function Sutom() {
       .catch(() => {
         /* non-fatal */
       })
-    fetchLeaderboard()
+  }, [viewedDate, loadAttempt])
+
+  const refreshLeaderboard = useCallback((include: boolean) => {
+    fetchLeaderboard(include)
       .then(setLeaderboard)
       .catch(() => {
         /* non-fatal */
       })
-  }, [viewedDate, loadAttempt])
+  }, [])
+
+  // Independent of which day is being viewed — re-fetched only when the toggle changes.
+  useEffect(() => {
+    refreshLeaderboard(includeToday)
+  }, [includeToday, refreshLeaderboard])
 
   const refreshScoreboard = useCallback((date: string) => {
     fetchScoreboard(date)
@@ -413,6 +472,7 @@ export function Sutom() {
 
     const submittedGuess = currentGuess
     const nextGuesses = [...guesses, submittedGuess]
+    const isWin = submittedGuess === day.word
     setSubmitting(true)
     submitGuesses(day.date, nextGuesses)
       .then(async (result) => {
@@ -428,23 +488,19 @@ export function Sutom() {
         }
 
         setScore(result.score)
-        if (submittedGuess === day.word) {
+        if (isWin) {
           notify('Bravo, mot trouvé !', 'success')
         } else if (result.score !== null) {
           notify(`Perdu ! Le mot était ${day.word}.`, 'info')
         }
         if (result.score !== null) {
           refreshScoreboard(day.date)
-          fetchLeaderboard()
-            .then(setLeaderboard)
-            .catch(() => {
-              /* non-fatal */
-            })
+          refreshLeaderboard(includeToday)
         }
       })
       .catch((e) => notify(e instanceof ApiError ? e.message : 'Erreur, réessayez.', 'error'))
       .finally(() => setSubmitting(false))
-  }, [day, gameOver, submitting, currentGuess, guesses, notify, refreshScoreboard])
+  }, [day, gameOver, submitting, currentGuess, guesses, notify, refreshScoreboard, refreshLeaderboard, includeToday])
 
   const typeLetter = useCallback(
     (letter: string) => {
@@ -535,6 +591,11 @@ export function Sutom() {
   const lastUnfinishedDate = history?.entries.find((h) => h.my_score == null)?.date
   const canGoToLastUnfinished = !!lastUnfinishedDate && lastUnfinishedDate !== day.date
 
+  // While the just-submitted row is still revealing letter-by-letter, the "next guess"
+  // preview row below it (dots, or the win/loss outcome) must stay hidden — otherwise it
+  // pops in immediately, ahead of the animation it's supposed to follow.
+  const isRevealingLastRow = guesses.length > 0 && revealCount < wordLength
+
   const rows: Array<{
     letters: string[]
     statuses: (LetterStatus | undefined)[]
@@ -544,10 +605,12 @@ export function Sutom() {
       const result = scoreGuess(day.word, guesses[i])
       const isRevealing = i === guesses.length - 1 && revealCount < wordLength
       rows.push({
+        // Letters stay visible right away (you typed them, so there's nothing to hide) —
+        // only the color reveal is staged, one tile at a time.
         letters: result.map((r) => r.letter),
         statuses: result.map((r, j) => (isRevealing && j >= revealCount ? undefined : r.status)),
       })
-    } else if (i === guesses.length && !gameOver) {
+    } else if (i === guesses.length && !gameOver && !isRevealingLastRow) {
       // The line you're about to fill in: first letter shown crisp, untyped slots
       // marked with a placeholder dot so the word's length stays visible.
       const letters = currentGuess.split('')
@@ -615,6 +678,15 @@ export function Sutom() {
               </button>
             </div>
           </div>
+
+          {day.date < LEADERBOARD_START_DATE && (
+            <div role="alert" className="alert alert-warning w-full text-sm">
+              <span>
+                Partie d'entraînement : le concours du classement général a démarré mercredi 23 septembre 2026, toutes
+                les parties antérieures à cette date ne rapportent pas de point au classement.
+              </span>
+            </div>
+          )}
 
           {gameOver && (
             <div
@@ -693,7 +765,10 @@ export function Sutom() {
               <h3 className="font-semibold text-sm mb-2">
                 Classement du jour
                 {day.par != null && (
-                  <span className="text-base-content/40 font-normal">
+                  <span
+                    className="text-base-content/40 font-normal"
+                    title={day.par_average != null ? `Moyenne actuelle : ${day.par_average.toFixed(2)}` : undefined}
+                  >
                     {' '}
                     · par {day.par}
                     {day.date === todayDate ? ' (provisoire)' : ''}
@@ -705,8 +780,20 @@ export function Sutom() {
           </div>
           <div className="card bg-base-100 shadow-sm">
             <div className="card-body p-4">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-sm">Classement — 30 derniers jours</h3>
+              <div className="flex items-center justify-between mb-2 gap-2">
+                <h3 className="font-semibold text-sm">
+                  Classement — 30 derniers jours{' '}
+                  <span className="font-normal text-xs text-base-content/50 ml-2">
+                    <input
+                      type="checkbox"
+                      className="toggle toggle-xs align-middle mx-1"
+                      checked={includeToday}
+                      onChange={(e) => setIncludeToday(e.target.checked)}
+                      title="Inclure les résultats provisoires du jour dans le classement"
+                    />
+                    dont aujourd'hui
+                  </span>
+                </h3>
                 <PointsInfoModal />
               </div>
               <LeaderboardPanel leaderboard={leaderboard} />
