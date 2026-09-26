@@ -19,6 +19,7 @@ export type Day = z.infer<typeof DaySchema>
 const ScoreboardPlayerSchema = z.object({
   user_id: z.number(),
   first_name: z.string(),
+  last_initial: z.string(),
   finished: z.boolean(),
   revealed: z.boolean(),
   score: z.number().nullable(),
@@ -38,9 +39,10 @@ export type Scoreboard = z.infer<typeof ScoreboardSchema>
 const LeaderboardEntrySchema = z.object({
   user_id: z.number(),
   first_name: z.string(),
+  last_initial: z.string(),
   points: z.number(),
   games_played: z.number(),
-  points_per_day: z.number(),
+  avg_guesses: z.number(),
 })
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>
 

@@ -119,7 +119,8 @@ function keyStyle(status: LetterStatus | undefined): CSSProperties | undefined {
         color: 'white',
       }
     case 'absent':
-      return { borderColor: COLOR_ABSENT_KEY, color: COLOR_ABSENT_KEY }
+      // Dimmed so a tried-and-absent key reads as distinct from a still-untried one.
+      return { borderColor: COLOR_ABSENT_KEY, color: COLOR_ABSENT_KEY, opacity: 0.5 }
     default:
       return undefined
   }
@@ -156,6 +157,11 @@ function GridCell({ letter, status }: { letter: string; status: LetterStatus | u
       <span className={`relative ${letter === '.' ? 'self-end pb-0.5' : ''}`}>{letter === '.' ? '·' : letter}</span>
     </div>
   )
+}
+
+// Appends the last name's initial to disambiguate players sharing a first name.
+function displayName(firstName: string, lastInitial: string): string {
+  return lastInitial ? `${firstName} ${lastInitial}.` : firstName
 }
 
 function scoreLabel(score: number | null): string {
@@ -195,7 +201,7 @@ function basePoints(par: number, score: number): number {
 }
 
 function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; par: number | null }) {
-  const [expanded, setExpanded] = useState<number | null>(null)
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
 
   if (!scoreboard) return <span className="loading loading-spinner loading-sm text-base-content/40" />
   if (scoreboard.players.length === 0) {
@@ -210,12 +216,19 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
           <li key={p.user_id} className="border border-base-200 rounded-lg overflow-hidden">
             <button
               className="w-full flex items-center justify-between px-3 py-2 text-sm disabled:cursor-default enabled:hover:bg-base-200 enabled:cursor-pointer transition-colors"
-              onClick={() => setExpanded((e) => (e === p.user_id ? null : p.user_id))}
+              onClick={() =>
+                setExpanded((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(p.user_id)) next.delete(p.user_id)
+                  else next.add(p.user_id)
+                  return next
+                })
+              }
               disabled={!p.revealed}
               title={p.revealed ? 'Voir le détail' : undefined}
             >
               <span>
-                {i + 1}. {p.first_name}
+                {i + 1}. {displayName(p.first_name, p.last_initial)}
                 {p.first_to_finish && <span title="Premier à finir"> 🥇</span>}
                 {golf && <span title={golf.title}> {golf.emoji}</span>}
               </span>
@@ -228,7 +241,7 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
                 <span className="text-xs text-base-content/40">En cours…</span>
               )}
             </button>
-            {expanded === p.user_id && p.sequence && (
+            {expanded.has(p.user_id) && p.sequence && (
               <div className="px-3 py-2 flex items-start justify-between gap-3">
                 <div className="flex flex-col gap-0.5">
                   {p.sequence.map((row, rowIdx) => (
@@ -242,7 +255,7 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
                 {par != null && p.score != null && p.points != null && (
                   <ul className="text-[11px] text-base-content/50 leading-tight pl-3">
                     <li>
-                      Score {p.score} vs par {par} = {basePoints(par, p.score).toFixed(0)} pts
+                      Score {p.score} vs par {par} = {basePoints(par, p.score).toFixed(1)} pts
                     </li>
                     {p.first_to_finish && <li>Premier à finir : +0,5 pt</li>}
                     {p.is_catchup && <li>Rattrapage : × 50%</li>}
@@ -272,19 +285,19 @@ function LeaderboardPanel({ leaderboard }: { leaderboard: Leaderboard | null }) 
           <th>Joueur</th>
           <th
             className="text-right text-base-content/40 font-normal"
-            title="Indicatif uniquement, sans effet sur le classement"
+            title="Indicatif uniquement, sans effet sur le classement — les jours non joués ne comptent pas"
           >
-            Points / jour
+            Coups moyens
           </th>
-          <th className="text-right">Points</th>
+          <th className="text-right">Score</th>
         </tr>
       </thead>
       <tbody>
         {leaderboard.entries.map((e, i) => (
           <tr key={e.user_id}>
             <td className="text-base-content/40">{i + 1}</td>
-            <td>{e.first_name}</td>
-            <td className="text-right text-base-content/50">{e.points_per_day.toFixed(2)}</td>
+            <td>{displayName(e.first_name, e.last_initial)}</td>
+            <td className="text-right text-base-content/50">{e.avg_guesses.toFixed(2)}</td>
             <td className="text-right font-semibold">{e.points.toFixed(2)}</td>
           </tr>
         ))}
@@ -567,7 +580,11 @@ export function Sutom() {
   }
 
   const wordLength = day.word.length
-  const keyStatuses = keyboardStatuses(day.word, guesses)
+  // While the just-submitted row is still revealing letter-by-letter, the keyboard must
+  // not jump ahead of it — exclude that guess from the keyboard's colors until the
+  // animation finishes, so both update in sync instead of the keyboard spoiling it early.
+  const isRevealingLastRow = guesses.length > 0 && revealCount < wordLength
+  const keyStatuses = keyboardStatuses(day.word, isRevealingLastRow ? guesses.slice(0, -1) : guesses)
 
   const currentUserId = getTokenPayload()?.sub
   const isFirstToFinish = scoreboard?.players.some((p) => p.user_id === currentUserId && p.first_to_finish) ?? false
@@ -591,10 +608,14 @@ export function Sutom() {
   const lastUnfinishedDate = history?.entries.find((h) => h.my_score == null)?.date
   const canGoToLastUnfinished = !!lastUnfinishedDate && lastUnfinishedDate !== day.date
 
-  // While the just-submitted row is still revealing letter-by-letter, the "next guess"
-  // preview row below it (dots, or the win/loss outcome) must stay hidden — otherwise it
-  // pops in immediately, ahead of the animation it's supposed to follow.
-  const isRevealingLastRow = guesses.length > 0 && revealCount < wordLength
+  // Positions confirmed correct by any earlier guess this game, e.g. to remind the
+  // player of them on a fresh, untouched line — cleared the moment they start typing.
+  const knownCorrectLetters: (string | null)[] = Array(wordLength).fill(null)
+  guesses.forEach((g) => {
+    scoreGuess(day.word, g).forEach((r, pos) => {
+      if (r.status === 'correct') knownCorrectLetters[pos] = r.letter
+    })
+  })
 
   const rows: Array<{
     letters: string[]
@@ -615,7 +636,19 @@ export function Sutom() {
       // marked with a placeholder dot so the word's length stays visible.
       const letters = currentGuess.split('')
       while (letters.length < wordLength) letters.push('.')
-      rows.push({ letters, statuses: Array(wordLength).fill(undefined) })
+      const statuses: (LetterStatus | undefined)[] = Array(wordLength).fill(undefined)
+      // Nothing typed yet beyond the given first letter: remind the player of
+      // already-confirmed correct-position letters. The instant they type, this
+      // reminder disappears and typing proceeds normally from a blank line.
+      if (currentGuess.length <= 1) {
+        knownCorrectLetters.forEach((known, pos) => {
+          if (known) {
+            letters[pos] = known
+            statuses[pos] = 'correct'
+          }
+        })
+      }
+      rows.push({ letters, statuses })
     } else {
       // Not-yet-reached lines stay blank — only the very next line previews the first letter.
       rows.push({

@@ -1,6 +1,7 @@
 use axum::{Json, extract::{Path, State}};
 use chrono::NaiveDate;
 use serde::Serialize;
+use std::cmp::Ordering;
 use utoipa::ToSchema;
 
 use crate::error::AppError;
@@ -11,6 +12,8 @@ use crate::users::auth::CurrentUser;
 pub struct ScoreboardPlayer {
     pub user_id: i32,
     pub first_name: String,
+    /// First letter of the player's last name (e.g. disambiguates two "Alice"s).
+    pub last_initial: String,
     /// True once this player has solved or exhausted their attempts for the day.
     pub finished: bool,
     /// True once `sequence` is populated. The letter-by-letter grid stays hidden from
@@ -71,25 +74,45 @@ pub async fn get_scoreboard(
         .min_by_key(|a| a.updated_at)
         .map(|a| a.user_id);
 
-    let players = attempts
+    // Compute each player's points up front so the list can be ranked by them — points,
+    // not raw score, is the true ranking (a first-to-finish bonus or a catch-up discount
+    // can reorder two equal scores) — ties broken by whoever finished earlier. Players
+    // still playing have no points yet and always sort after everyone who has finished.
+    let mut scored: Vec<_> = attempts
         .into_iter()
         .map(|a| {
+            let is_first = Some(a.user_id) == first_finisher_id;
+            let is_catchup = domain::is_catchup_play(date, a.updated_at);
+            let points = match (a.score, par) {
+                (Some(score), Some(par)) => Some(domain::leaderboard_points(par, score, is_first, is_catchup)),
+                _ => None,
+            };
+            (a, is_first, is_catchup, points)
+        })
+        .collect();
+
+    scored.sort_by(|(a, _, _, pa), (b, _, _, pb)| match (pa, pb) {
+        (Some(pa), Some(pb)) => pb
+            .partial_cmp(pa)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.updated_at.cmp(&b.updated_at)),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => a.first_name.cmp(&b.first_name),
+    });
+
+    let players = scored
+        .into_iter()
+        .map(|(a, is_first, is_catchup, points)| {
             let finished = a.score.is_some();
             let revealed = finished && (a.user_id == user.id || viewer_finished);
             let sequence = revealed
                 .then(|| a.guesses.iter().map(|g| domain::score_guess(&daily.word, g)).collect());
-            let is_first = Some(a.user_id) == first_finisher_id;
-            let is_catchup = domain::is_catchup_play(date, a.updated_at);
-            let points = match (finished, par, a.score) {
-                (true, Some(par), Some(score)) => {
-                    Some(domain::leaderboard_points(par, score, is_first, is_catchup))
-                }
-                _ => None,
-            };
 
             ScoreboardPlayer {
                 user_id: a.user_id,
                 first_name: a.first_name,
+                last_initial: domain::last_initial(&a.last_name),
                 finished,
                 revealed,
                 score: a.score,
