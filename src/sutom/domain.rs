@@ -48,6 +48,12 @@ pub fn leaderboard_start_date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 9, 23).expect("valid leaderboard start date")
 }
 
+/// First letter of a last name, uppercased (e.g. to disambiguate two players sharing a
+/// first name in the leaderboards), or empty if the last name itself is empty.
+pub fn last_initial(last_name: &str) -> String {
+    last_name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LetterStatus {

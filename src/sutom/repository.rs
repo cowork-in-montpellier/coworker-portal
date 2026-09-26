@@ -146,6 +146,7 @@ pub async fn upsert_attempt(
 pub struct PlayerAttempt {
     pub user_id: i32,
     pub first_name: String,
+    pub last_name: String,
     pub guesses: Vec<String>,
     pub score: Option<i32>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -161,13 +162,14 @@ pub async fn list_attempts_for_date(
     struct Row {
         user_id: i32,
         first_name: String,
+        last_name: String,
         guesses: Vec<String>,
         score: Option<i32>,
         updated_at: chrono::DateTime<chrono::Utc>,
     }
 
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT a.user_id, u.first_name, a.guesses, a.score, a.updated_at
+        "SELECT a.user_id, u.first_name, u.last_name, a.guesses, a.score, a.updated_at
          FROM portal_sutom_attempt a
          JOIN auth_user u ON u.id = a.user_id
          WHERE a.game_date = $1
@@ -182,6 +184,7 @@ pub async fn list_attempts_for_date(
         .map(|r| PlayerAttempt {
             user_id: r.user_id,
             first_name: r.first_name,
+            last_name: r.last_name,
             guesses: r.guesses,
             score: r.score,
             updated_at: r.updated_at,
@@ -192,6 +195,7 @@ pub async fn list_attempts_for_date(
 pub struct ScoreRow {
     pub user_id: i32,
     pub first_name: String,
+    pub last_name: String,
     pub score: i32,
     pub par: i32,
     pub game_date: NaiveDate,
@@ -210,6 +214,7 @@ pub async fn list_scored_attempts_since(
     struct Row {
         user_id: i32,
         first_name: String,
+        last_name: String,
         score: i32,
         par: i32,
         game_date: NaiveDate,
@@ -218,7 +223,7 @@ pub async fn list_scored_attempts_since(
     }
 
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT a.user_id, u.first_name, a.score, w.par, a.game_date, a.updated_at,
+        "SELECT a.user_id, u.first_name, u.last_name, a.score, w.par, a.game_date, a.updated_at,
                 (RANK() OVER (PARTITION BY a.game_date ORDER BY a.updated_at) = 1) AS is_first
          FROM portal_sutom_attempt a
          JOIN auth_user u ON u.id = a.user_id
@@ -234,6 +239,7 @@ pub async fn list_scored_attempts_since(
         .map(|r| ScoreRow {
             user_id: r.user_id,
             first_name: r.first_name,
+            last_name: r.last_name,
             score: r.score,
             par: r.par,
             game_date: r.game_date,

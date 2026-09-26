@@ -26,11 +26,15 @@ fn default_include_today() -> bool {
 pub struct LeaderboardEntry {
     pub user_id: i32,
     pub first_name: String,
+    /// First letter of the player's last name (e.g. disambiguates two "Alice"s).
+    pub last_initial: String,
     pub points: f64,
     pub games_played: i32,
-    /// Total points divided by the number of days the leaderboard covers (not by games
-    /// played) — purely informational, not used for ranking.
-    pub points_per_day: f64,
+    /// Average number of guesses per word actually played in the window (a failed
+    /// attempt counts as `MAX_ATTEMPTS + 1`). Days not played are skipped entirely
+    /// rather than counted against the player, so this isn't ordered the same way
+    /// points are — purely informational, not used for ranking.
+    pub avg_guesses: f64,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -73,6 +77,7 @@ pub async fn get_leaderboard(
                 rows.push(repository::ScoreRow {
                     user_id: a.user_id,
                     first_name: a.first_name,
+                    last_name: a.last_name,
                     score: a.score.unwrap(),
                     par,
                     game_date: today,
@@ -83,25 +88,25 @@ pub async fn get_leaderboard(
         }
     }
 
-    let mut totals: HashMap<i32, (String, f64, i32)> = HashMap::new();
+    let mut totals: HashMap<i32, (String, String, f64, i32, i32)> = HashMap::new();
     for row in rows {
         let is_catchup = domain::is_catchup_play(row.game_date, row.updated_at);
         let points = domain::leaderboard_points(row.par, row.score, row.is_first, is_catchup);
-        let entry = totals.entry(row.user_id).or_insert((row.first_name, 0.0, 0));
-        entry.1 += points;
-        entry.2 += 1;
+        let entry = totals.entry(row.user_id).or_insert((row.first_name, row.last_name, 0.0, 0, 0));
+        entry.2 += points;
+        entry.3 += 1;
+        entry.4 += row.score;
     }
-
-    let days_elapsed = ((today - since).num_days() + 1).max(1) as f64;
 
     let mut entries: Vec<LeaderboardEntry> = totals
         .into_iter()
-        .map(|(user_id, (first_name, points, games_played))| LeaderboardEntry {
+        .map(|(user_id, (first_name, last_name, points, games_played, score_sum))| LeaderboardEntry {
             user_id,
             first_name,
+            last_initial: domain::last_initial(&last_name),
             points,
             games_played,
-            points_per_day: points / days_elapsed,
+            avg_guesses: score_sum as f64 / games_played as f64,
         })
         .collect();
     entries.sort_by(|a, b| b.points.partial_cmp(&a.points).unwrap_or(Ordering::Equal));
