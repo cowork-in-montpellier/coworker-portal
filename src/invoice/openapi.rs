@@ -36,6 +36,7 @@ impl Modify for SecurityAddon {
         crate::invoice::routes::vouchers::VoucherStatusResponse,
         crate::invoice::routes::vouchers::VoucherCheckResponse,
         crate::invoice::routes::vouchers::RevokeVoucherResponse,
+        crate::invoice::routes::vouchers::SplitVoucherResponse,
         crate::invoice::routes::guest::GuestServicesResponse,
         crate::invoice::routes::guest::GuestVoucherResponse,
         crate::invoice::routes::guest::GuestBillLineResponse,

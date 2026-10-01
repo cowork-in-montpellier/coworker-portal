@@ -6,8 +6,10 @@ import {
   type VoucherStatusEntry,
   checkVouchers,
   downloadBillPdf,
+  getBill,
   listBills,
   revokeVoucher,
+  splitVoucher,
 } from '../api/bills'
 import { generateVoucherPdf } from '../components/VoucherPdf'
 import { type Service, listServices } from '../api/services'
@@ -73,7 +75,12 @@ export function Dashboard() {
   const [copiedVoucherId, setCopiedVoucherId] = useState<string | null>(null)
   const copiedVoucherTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [revokingVoucherId, setRevokingVoucherId] = useState<string | null>(null)
+  const [splittingVoucherId, setSplittingVoucherId] = useState<string | null>(null)
   const toast = useToast()
+
+  const refreshBill = (updated: Bill) => {
+    setResult(prev => (prev ? { ...prev, data: prev.data.map(b => (b.id === updated.id ? updated : b)) } : prev))
+  }
 
   const toggleExpand = (id: number) => setExpandedId(prev => (prev === id ? null : id))
 
@@ -105,6 +112,21 @@ export function Dashboard() {
       toast(err instanceof ApiError ? err.message : 'Erreur lors de la révocation du voucher', 'error')
     } finally {
       setRevokingVoucherId(null)
+    }
+  }
+
+  const handleSplitVoucher = async (billId: number, unifyId: string) => {
+    if (!window.confirm('Diviser ce voucher de 10h en 2 vouchers de 5h ? Le voucher original sera annulé.')) return
+    setSplittingVoucherId(unifyId)
+    try {
+      await splitVoucher(billId, unifyId)
+      refreshBill(await getBill(billId))
+      await handleCheckVouchers(billId)
+      toast('Voucher divisé en 2 vouchers de 5h', 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Erreur lors de la division du voucher', 'error')
+    } finally {
+      setSplittingVoucherId(null)
     }
   }
 
@@ -385,14 +407,20 @@ export function Dashboard() {
                                       )}
                                       <div className="flex flex-wrap gap-3">
                                         {[...line.vouchers]
-                                          .sort((a, b) => a.unify_id.localeCompare(b.unify_id))
+                                          .sort(
+                                            (a, b) =>
+                                              a.unify_create_time - b.unify_create_time ||
+                                              a.unify_id.localeCompare(b.unify_id),
+                                          )
                                           .map((v, i) => {
                                             const liveStatus = voucherStatuses
                                               .get(bill.id)
                                               ?.find(s => s.unify_id === v.unify_id)
                                             const status = liveStatus?.status ?? null
-                                            const isExpired = status === 'Expired' || status === 'Used'
+                                            const isExpired =
+                                              status === 'Expired' || status === 'Used' || status === 'Revoked'
                                             const canRevoke = isMonthly && isPastMonth(bill.date)
+                                            const canSplit = v.duration === 10 && status === 'Valid'
                                             return (
                                               <div
                                                 key={v.unify_id}
@@ -402,7 +430,7 @@ export function Dashboard() {
                                                     : 'bg-base-100 border-base-300'
                                                 }`}
                                               >
-                                                <div className="absolute bottom-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                                <div className="absolute bottom-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity z-10">
                                                   <button
                                                     type="button"
                                                     className="btn btn-xs btn-ghost"
@@ -422,6 +450,45 @@ export function Dashboard() {
                                                       {revokingVoucherId === v.unify_id ? '…' : 'Révoquer'}
                                                     </button>
                                                   )}
+                                                  {canSplit && (
+                                                    <div className="dropdown dropdown-end dropdown-top">
+                                                      <div
+                                                        tabIndex={0}
+                                                        role="button"
+                                                        className="btn btn-xs btn-ghost btn-circle"
+                                                        title="Options du voucher"
+                                                      >
+                                                        <svg
+                                                          xmlns="http://www.w3.org/2000/svg"
+                                                          className="h-3.5 w-3.5"
+                                                          viewBox="0 0 20 20"
+                                                          fill="currentColor"
+                                                        >
+                                                          <path
+                                                            fillRule="evenodd"
+                                                            d="M8.34 1.804A1 1 0 019.32 1h1.36a1 1 0 01.98.804l.214 1.07a6.98 6.98 0 011.66.958l1.036-.336a1 1 0 011.208.502l.68 1.178a1 1 0 01-.223 1.263l-.837.717a7.014 7.014 0 010 1.916l.837.717a1 1 0 01.223 1.263l-.68 1.178a1 1 0 01-1.208.502l-1.035-.336a6.976 6.976 0 01-1.66.958l-.214 1.07a1 1 0 01-.98.804H9.32a1 1 0 01-.98-.804l-.214-1.07a6.98 6.98 0 01-1.66-.958l-1.036.336a1 1 0 01-1.208-.502l-.68-1.178a1 1 0 01.223-1.263l.837-.717a7.014 7.014 0 010-1.916l-.837-.717a1 1 0 01-.223-1.263l.68-1.178a1 1 0 011.208-.502l1.035.336a6.976 6.976 0 011.66-.958l.214-1.07zM10 13a3 3 0 100-6 3 3 0 000 6z"
+                                                            clipRule="evenodd"
+                                                          />
+                                                        </svg>
+                                                      </div>
+                                                      <ul
+                                                        tabIndex={0}
+                                                        className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-200 z-20 w-48 p-1"
+                                                      >
+                                                        <li>
+                                                          <button
+                                                            type="button"
+                                                            disabled={splittingVoucherId === v.unify_id}
+                                                            onClick={() => handleSplitVoucher(bill.id, v.unify_id)}
+                                                          >
+                                                            {splittingVoucherId === v.unify_id
+                                                              ? '…'
+                                                              : 'Diviser en 2 × 5h'}
+                                                          </button>
+                                                        </li>
+                                                      </ul>
+                                                    </div>
+                                                  )}
                                                 </div>
                                                 <div className="card-body p-3 gap-1">
                                                   <div className="flex items-center justify-between">
@@ -437,7 +504,9 @@ export function Dashboard() {
                                                               ? 'badge-neutral'
                                                               : status === 'Expired'
                                                                 ? 'badge-error'
-                                                                : 'badge-ghost'
+                                                                : status === 'Revoked'
+                                                                  ? 'badge-warning'
+                                                                  : 'badge-ghost'
                                                         }`}
                                                       >
                                                         {status === 'Valid'
@@ -446,7 +515,9 @@ export function Dashboard() {
                                                             ? 'Utilisé'
                                                             : status === 'Expired'
                                                               ? 'Expiré'
-                                                              : 'Inconnu'}
+                                                              : status === 'Revoked'
+                                                                ? 'Annulé'
+                                                                : 'Inconnu'}
                                                       </span>
                                                     )}
                                                   </div>

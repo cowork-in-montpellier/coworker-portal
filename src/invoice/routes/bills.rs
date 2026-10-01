@@ -64,6 +64,7 @@ pub struct VoucherResponse {
     pub duration: i32,
     pub status: String,
     pub active_days_count: i32,
+    pub unify_create_time: i64,
 }
 
 /// One line of a bill. `service_id` is None when the line references a service
@@ -121,6 +122,7 @@ struct VoucherRow {
     duration: i32,
     status: String,
     active_days_count: i32,
+    unify_create_time: i64,
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -132,6 +134,7 @@ fn voucher_row_to_response(v: VoucherRow) -> VoucherResponse {
         duration: v.duration,
         status: v.status,
         active_days_count: v.active_days_count,
+        unify_create_time: v.unify_create_time,
     }
 }
 
@@ -144,7 +147,7 @@ async fn fetch_vouchers_bulk(
         return Ok(HashMap::new());
     }
     let rows = sqlx::query_as::<_, VoucherRow>(
-        "SELECT unify_id, billline_id, code, duration, status, cardinality(active_days) AS active_days_count FROM portal_voucher WHERE bill_id = ANY($1)",
+        "SELECT unify_id, billline_id, code, duration, status, cardinality(active_days) AS active_days_count, unify_create_time FROM portal_voucher WHERE bill_id = ANY($1)",
     )
     .bind(bill_ids)
     .fetch_all(db)
@@ -415,6 +418,7 @@ pub async fn create_bill(
                     duration: uv.duration,
                     status: "Valid".to_string(),
                     active_days_count: 0,
+                    unify_create_time: uv.create_time,
                 });
             }
         }
