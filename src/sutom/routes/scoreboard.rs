@@ -28,8 +28,8 @@ pub struct ScoreboardPlayer {
     pub first_to_finish: bool,
     /// True if the word was found less than a minute after the first guess.
     pub fast: bool,
-    /// How many days after the puzzle's own day it was finished (0 = on the day). Lets
-    /// the UI explain a player's point total precisely.
+    /// How many days after the puzzle's own day it was finished (0 = on the day, and always
+    /// 0 while still in progress). Lets the UI explain a player's point total precisely.
     pub days_late: i32,
     /// This day's leaderboard points for the player, once revealed.
     pub points: Option<f64>,
@@ -82,7 +82,8 @@ pub async fn get_scoreboard(
         .into_iter()
         .map(|a| {
             let is_first = Some(a.user_id) == first_finisher_id;
-            let days_late = domain::days_late(date, a.updated_at);
+            // Only a finished game is late; an unfinished one's last guess says nothing yet.
+            let days_late = if a.score.is_some() { domain::days_late(date, a.updated_at) } else { 0 };
             let fast = a.score.is_some_and(|score| domain::is_fast_finish(a.started_at, a.updated_at, score));
             let points = match (a.score, par) {
                 (Some(score), Some(par)) => Some(domain::leaderboard_points(par, score, is_first, fast, days_late)),
