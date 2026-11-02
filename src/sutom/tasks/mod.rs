@@ -19,6 +19,15 @@ pub async fn register(scheduler: &JobScheduler, state: State) -> anyhow::Result<
         Box::pin(async move { refresh::run(&s).await })
     })?).await?;
 
+    // Also freeze any missing monthly ranking right away, so a month that ended while the
+    // server was down (or before the feature existed) doesn't wait for the next night.
+    let s = state.clone();
+    tokio::spawn(async move {
+        if let Err(e) = crate::sutom::service::finalize_month_rankings(&s, crate::sutom::service::today_paris()).await {
+            tracing::error!(error = %e, "Sutom month rankings: startup run failed");
+        }
+    });
+
     tracing::info!(refresh_cron, timezone = "Europe/Paris", "Sutom scheduler tasks registered");
 
     Ok(())

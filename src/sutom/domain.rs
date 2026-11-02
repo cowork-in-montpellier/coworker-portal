@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Months, NaiveDate, Utc};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -46,6 +46,32 @@ pub fn puzzle_number(date: NaiveDate) -> i32 {
 /// playable (warm-up/training) but never count toward leaderboard points.
 pub fn leaderboard_start_date() -> NaiveDate {
     NaiveDate::from_ymd_opt(2026, 9, 23).expect("valid leaderboard start date")
+}
+
+/// The first month whose leaderboard winner earns a star.
+pub fn first_titled_month() -> NaiveDate {
+    NaiveDate::from_ymd_opt(2026, 10, 1).expect("valid first titled month")
+}
+
+/// First and last day of the calendar month containing `date`.
+pub fn month_bounds(date: NaiveDate) -> (NaiveDate, NaiveDate) {
+    let first = date.with_day(1).expect("day 1 exists in every month");
+    let next_first = first.checked_add_months(Months::new(1)).expect("month within range");
+    (first, next_first.pred_opt().expect("day before a month start exists"))
+}
+
+/// When a month's ranking stops counting games: midnight, Paris time, at the start of
+/// the next month. Games finished later never count toward that month.
+pub fn month_end(month: NaiveDate) -> DateTime<Utc> {
+    let (_, last) = month_bounds(month);
+    let next_first = last.succ_opt().expect("day after a month end exists");
+    next_first
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight exists")
+        .and_local_timezone(chrono_tz::Europe::Paris)
+        .earliest()
+        .expect("midnight is never skipped in Paris")
+        .with_timezone(&Utc)
 }
 
 /// First letter of a last name, uppercased (e.g. to disambiguate two players sharing a
@@ -124,27 +150,47 @@ pub fn validate_guess(target: &str, possible_words: &[String], guess: &str) -> R
     Ok(())
 }
 
-/// Stableford-like scoring for the 30-day leaderboard: matching par is worth 3 points,
+/// Under this time between the first guess and solving it, a game earns the speed bonus.
+pub const FAST_FINISH_SECS: i64 = 60;
+
+/// Stableford-like scoring for the monthly leaderboard: matching par is worth 3 points,
 /// and each attempt better/worse than par shifts the score, with overshoots (a worse
 /// score than par) penalized more gently than undershoots are rewarded. Being the first
-/// to finish that day adds a small bonus, and catching up on a day that's already past
-/// only earns half of what it would have on the day itself. Never finding the word at
-/// all is worth nothing, no matter how bad everyone else's par was — failing to solve it
-/// isn't just "a bad score", so it never earns points or bonuses.
-pub fn leaderboard_points(par: i32, score: i32, first_to_finish: bool, is_catchup: bool) -> f64 {
+/// to finish that day and solving it in under a minute each add a small bonus, and the
+/// total (bonuses included) is scaled down when the day is played late. Never finding the
+/// word at all is worth nothing, no matter how bad everyone else's par was — failing to
+/// solve it isn't just "a bad score", so it never earns points or bonuses.
+pub fn leaderboard_points(par: i32, score: i32, first_to_finish: bool, fast: bool, days_late: i32) -> f64 {
     if score >= FAILED_SCORE {
         return 0.0;
     }
     let diff = (par - score) as f64;
     let divisor = if score > par { 2.0 } else { 1.0 };
-    let base = 3.0 + diff / divisor + if first_to_finish { 0.5 } else { 0.0 };
-    if is_catchup { base * 0.5 } else { base }
+    let bonus = if first_to_finish { 0.5 } else { 0.0 } + if fast { 0.5 } else { 0.0 };
+    (3.0 + diff / divisor + bonus) * late_multiplier(days_late)
 }
 
-/// True if a day's puzzle was completed after the day itself (a later catch-up play),
-/// rather than on the day it was published, both compared in Paris local time.
-pub fn is_catchup_play(game_date: NaiveDate, completed_at: DateTime<Utc>) -> bool {
-    completed_at.with_timezone(&chrono_tz::Europe::Paris).date_naive() != game_date
+/// How many Paris-local days after the puzzle's own day it was completed (0 = on the day).
+pub fn days_late(game_date: NaiveDate, completed_at: DateTime<Utc>) -> i32 {
+    let completed_on = completed_at.with_timezone(&chrono_tz::Europe::Paris).date_naive();
+    (completed_on - game_date).num_days().max(0) as i32
+}
+
+/// Share of the points kept when a day is played late: all of it on the day, 75 % the
+/// next day, 50 % beyond.
+pub fn late_multiplier(days_late: i32) -> f64 {
+    match days_late {
+        0 => 1.0,
+        1 => 0.75,
+        _ => 0.5,
+    }
+}
+
+/// True if the word was found less than `FAST_FINISH_SECS` after the first guess (so a
+/// first-guess win always qualifies). Attempts with no recorded start (begun before start times were tracked) never qualify.
+pub fn is_fast_finish(started_at: Option<DateTime<Utc>>, finished_at: DateTime<Utc>, score: i32) -> bool {
+    score < FAILED_SCORE
+        && started_at.is_some_and(|start| (finished_at - start).num_seconds() < FAST_FINISH_SECS)
 }
 
 #[cfg(test)]
@@ -195,51 +241,75 @@ mod tests {
         assert_eq!(score_for("BLOUSON", &failed), Some(FAILED_SCORE));
     }
 
+    fn utc(y: i32, m: u32, d: u32, h: u32, min: u32, s: u32) -> DateTime<Utc> {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap().and_hms_opt(h, min, s).unwrap().and_utc()
+    }
+
     #[test]
     fn leaderboard_points_matches_spec_formula() {
-        assert_eq!(leaderboard_points(4, 4, false, false), 3.0);
-        assert_eq!(leaderboard_points(4, 1, false, false), 6.0);
-        assert_eq!(leaderboard_points(4, 6, false, false), 2.0);
+        assert_eq!(leaderboard_points(4, 4, false, false, 0), 3.0);
+        assert_eq!(leaderboard_points(4, 1, false, false, 0), 6.0);
+        assert_eq!(leaderboard_points(4, 6, false, false, 0), 2.0);
     }
 
     #[test]
     fn leaderboard_points_never_rewards_a_failed_attempt() {
         // Not finding the word (FAILED_SCORE) always earns zero — not finding it isn't
-        // just "a very bad score", regardless of how forgiving par is, the bonus, or catchup.
-        assert_eq!(leaderboard_points(4, FAILED_SCORE, false, false), 0.0);
-        assert_eq!(leaderboard_points(7, FAILED_SCORE, false, false), 0.0);
-        assert_eq!(leaderboard_points(4, FAILED_SCORE, true, false), 0.0);
-        assert_eq!(leaderboard_points(4, FAILED_SCORE, false, true), 0.0);
-        assert_eq!(leaderboard_points(4, FAILED_SCORE, true, true), 0.0);
+        // just "a very bad score", regardless of how forgiving par is, bonuses, or lateness.
+        assert_eq!(leaderboard_points(4, FAILED_SCORE, false, false, 0), 0.0);
+        assert_eq!(leaderboard_points(7, FAILED_SCORE, false, false, 0), 0.0);
+        assert_eq!(leaderboard_points(4, FAILED_SCORE, true, true, 0), 0.0);
+        assert_eq!(leaderboard_points(4, FAILED_SCORE, true, true, 3), 0.0);
     }
 
     #[test]
-    fn leaderboard_points_adds_first_to_finish_bonus() {
-        assert_eq!(leaderboard_points(4, 4, true, false), 3.5);
-        assert_eq!(leaderboard_points(4, 1, true, false), 6.5);
+    fn leaderboard_points_adds_bonuses() {
+        assert_eq!(leaderboard_points(4, 4, true, false, 0), 3.5);
+        assert_eq!(leaderboard_points(4, 4, false, true, 0), 3.5);
+        assert_eq!(leaderboard_points(4, 1, true, true, 0), 7.0);
     }
 
     #[test]
-    fn leaderboard_points_halves_catchup_plays() {
-        // Same performance, but played after the day itself: half the points, bonus included.
-        assert_eq!(leaderboard_points(4, 4, false, true), 1.5);
-        assert_eq!(leaderboard_points(4, 4, true, true), 1.75);
+    fn leaderboard_points_scales_late_plays_bonuses_included() {
+        assert_eq!(leaderboard_points(4, 4, false, false, 1), 2.25);
+        assert_eq!(leaderboard_points(4, 4, true, false, 1), 2.625);
+        assert_eq!(leaderboard_points(4, 4, false, false, 2), 1.5);
+        assert_eq!(leaderboard_points(4, 4, true, false, 10), 1.75);
     }
 
     #[test]
-    fn is_catchup_play_compares_paris_local_dates() {
+    fn days_late_compares_paris_local_dates() {
         let game_date = NaiveDate::from_ymd_opt(2026, 9, 21).unwrap();
-        let same_day = NaiveDate::from_ymd_opt(2026, 9, 21)
-            .unwrap()
-            .and_hms_opt(20, 0, 0)
-            .unwrap()
-            .and_utc();
-        let next_day = NaiveDate::from_ymd_opt(2026, 9, 22)
-            .unwrap()
-            .and_hms_opt(10, 0, 0)
-            .unwrap()
-            .and_utc();
-        assert!(!is_catchup_play(game_date, same_day));
-        assert!(is_catchup_play(game_date, next_day));
+        assert_eq!(days_late(game_date, utc(2026, 9, 21, 20, 0, 0)), 0);
+        // 22:30 UTC on the 21st is already 00:30 on the 22nd in Paris (summer time).
+        assert_eq!(days_late(game_date, utc(2026, 9, 21, 22, 30, 0)), 1);
+        assert_eq!(days_late(game_date, utc(2026, 9, 22, 10, 0, 0)), 1);
+        assert_eq!(days_late(game_date, utc(2026, 9, 25, 10, 0, 0)), 4);
+    }
+
+    #[test]
+    fn is_fast_finish_requires_a_solve_within_a_minute_of_the_first_guess() {
+        let start = utc(2026, 9, 21, 9, 0, 0);
+        assert!(is_fast_finish(Some(start), utc(2026, 9, 21, 9, 0, 59), 3));
+        assert!(!is_fast_finish(Some(start), utc(2026, 9, 21, 9, 1, 0), 3));
+        assert!(!is_fast_finish(Some(start), utc(2026, 9, 21, 9, 0, 30), FAILED_SCORE));
+        assert!(!is_fast_finish(None, utc(2026, 9, 21, 9, 0, 30), 3));
+    }
+
+    #[test]
+    fn month_end_is_paris_midnight_starting_the_next_month() {
+        // October 2026 ends at midnight on November 1st, Paris winter time (UTC+1).
+        assert_eq!(month_end(NaiveDate::from_ymd_opt(2026, 10, 15).unwrap()), utc(2026, 10, 31, 23, 0, 0));
+        // September 2026 ends at midnight on October 1st, Paris summer time (UTC+2).
+        assert_eq!(month_end(NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()), utc(2026, 9, 30, 22, 0, 0));
+    }
+
+    #[test]
+    fn month_bounds_covers_the_whole_month() {
+        let (first, last) = month_bounds(NaiveDate::from_ymd_opt(2026, 2, 14).unwrap());
+        assert_eq!(first, NaiveDate::from_ymd_opt(2026, 2, 1).unwrap());
+        assert_eq!(last, NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
+        let (_, last) = month_bounds(NaiveDate::from_ymd_opt(2026, 12, 31).unwrap());
+        assert_eq!(last, NaiveDate::from_ymd_opt(2026, 12, 31).unwrap());
     }
 }

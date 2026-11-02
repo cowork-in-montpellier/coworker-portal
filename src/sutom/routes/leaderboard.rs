@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use axum::{Json, extract::{Query, State}};
@@ -13,13 +12,8 @@ use crate::users::auth::CurrentUser;
 #[derive(Deserialize, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct LeaderboardQuery {
-    /// Include today's still-in-progress results, scored against today's live
-    /// (not yet frozen) par estimate. Defaults to true.
-    #[serde(default = "default_include_today")]
-    pub include_today: bool,
-}
-fn default_include_today() -> bool {
-    true
+    /// Month to rank, `YYYY-MM`. Defaults to the current month (Paris time).
+    pub month: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -30,16 +24,21 @@ pub struct LeaderboardEntry {
     pub last_initial: String,
     pub points: f64,
     pub games_played: i32,
-    /// Average number of guesses per word actually played in the window (a failed
-    /// attempt counts as `MAX_ATTEMPTS + 1`). Days not played are skipped entirely
-    /// rather than counted against the player, so this isn't ordered the same way
-    /// points are — purely informational, not used for ranking.
+    /// Average number of guesses per word actually played in the month (a failed
+    /// attempt counts as `MAX_ATTEMPTS + 1`). Days not played are skipped rather than
+    /// counted against the player. Breaks ties between equal point totals.
     pub avg_guesses: f64,
+    /// Months the player has won to date, whichever month is being shown.
+    pub stars: i32,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct LeaderboardResponse {
-    pub since: NaiveDate,
+    /// The ranked month, `YYYY-MM`.
+    pub month: String,
+    /// True for a month that is over: its ranking is final and later catch-ups on its
+    /// grids no longer count.
+    pub is_final: bool,
     pub entries: Vec<LeaderboardEntry>,
 }
 
@@ -50,7 +49,8 @@ pub struct LeaderboardResponse {
     params(LeaderboardQuery),
     security(("bearer_auth" = [])),
     responses(
-        (status = 200, description = "Points leaderboard since the competition's start", body = LeaderboardResponse),
+        (status = 200, description = "Points leaderboard for one calendar month", body = LeaderboardResponse),
+        (status = 400, description = "Malformed month"),
         (status = 401, description = "Unauthorized"),
     )
 )]
@@ -60,56 +60,34 @@ pub async fn get_leaderboard(
     _user: CurrentUser,
 ) -> Result<Json<LeaderboardResponse>, AppError> {
     let today = service::today_paris();
-    // Never look further back than the competition's official start — earlier days
-    // were warm-up/training and never count toward leaderboard points.
-    let since = service::history_window_start(today).max(domain::leaderboard_start_date());
-    let mut rows = repository::list_scored_attempts_since(&state.db, since).await?;
+    let month_day = match q.month.as_deref() {
+        Some(m) => NaiveDate::parse_from_str(&format!("{m}-01"), "%Y-%m-%d")
+            .map_err(|_| AppError::BadRequest("Mois invalide, format attendu : AAAA-MM.".into()))?,
+        None => today,
+    };
+    let (month, _) = domain::month_bounds(month_day);
+    let is_final = month < domain::month_bounds(today).0;
 
-    // Today's par is never frozen yet (that only happens overnight), so it's excluded
-    // by `list_scored_attempts_since`'s `w.par IS NOT NULL` filter above. Optionally
-    // fold it back in here, scored against today's live estimate instead.
-    if q.include_today && today >= since {
-        let today_attempts = repository::list_attempts_for_date(&state.db, today).await?;
-        let finished_today: Vec<_> = today_attempts.into_iter().filter(|a| a.score.is_some()).collect();
-        if let Some(par) = repository::average_score_ceil(&state.db, today).await? {
-            let first_finisher_id = finished_today.iter().min_by_key(|a| a.updated_at).map(|a| a.user_id);
-            for a in finished_today {
-                rows.push(repository::ScoreRow {
-                    user_id: a.user_id,
-                    first_name: a.first_name,
-                    last_name: a.last_name,
-                    score: a.score.unwrap(),
-                    par,
-                    game_date: today,
-                    updated_at: a.updated_at,
-                    is_first: Some(a.user_id) == first_finisher_id,
-                });
-            }
-        }
+    // A month that is over is served from its frozen ranking. Until the nightly task has
+    // frozen it, it is computed the same way the task would.
+    let mut ranking = if is_final { repository::month_ranking(&state.db, month).await? } else { Vec::new() };
+    if ranking.is_empty() {
+        ranking = service::compute_month_ranking(&state, month, today).await?;
     }
 
-    let mut totals: HashMap<i32, (String, String, f64, i32, i32)> = HashMap::new();
-    for row in rows {
-        let is_catchup = domain::is_catchup_play(row.game_date, row.updated_at);
-        let points = domain::leaderboard_points(row.par, row.score, row.is_first, is_catchup);
-        let entry = totals.entry(row.user_id).or_insert((row.first_name, row.last_name, 0.0, 0, 0));
-        entry.2 += points;
-        entry.3 += 1;
-        entry.4 += row.score;
-    }
-
-    let mut entries: Vec<LeaderboardEntry> = totals
+    let stars: HashMap<i32, i64> = repository::star_counts(&state.db).await?.into_iter().collect();
+    let entries = ranking
         .into_iter()
-        .map(|(user_id, (first_name, last_name, points, games_played, score_sum))| LeaderboardEntry {
-            user_id,
-            first_name,
-            last_initial: domain::last_initial(&last_name),
-            points,
-            games_played,
-            avg_guesses: score_sum as f64 / games_played as f64,
+        .map(|e| LeaderboardEntry {
+            last_initial: domain::last_initial(&e.last_name),
+            user_id: e.user_id,
+            first_name: e.first_name,
+            points: e.points,
+            games_played: e.games_played,
+            avg_guesses: e.avg_guesses,
+            stars: stars.get(&e.user_id).copied().unwrap_or(0) as i32,
         })
         .collect();
-    entries.sort_by(|a, b| b.points.partial_cmp(&a.points).unwrap_or(Ordering::Equal));
 
-    Ok(Json(LeaderboardResponse { since, entries }))
+    Ok(Json(LeaderboardResponse { month: month.format("%Y-%m").to_string(), is_final, entries }))
 }

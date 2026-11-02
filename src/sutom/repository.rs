@@ -129,8 +129,8 @@ pub async fn upsert_attempt(
     score: Option<i32>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO portal_sutom_attempt (user_id, game_date, guesses, score, updated_at)
-         VALUES ($1, $2, $3, $4, now())
+        "INSERT INTO portal_sutom_attempt (user_id, game_date, guesses, score, started_at, updated_at)
+         VALUES ($1, $2, $3, $4, now(), now())
          ON CONFLICT (user_id, game_date)
          DO UPDATE SET guesses = EXCLUDED.guesses, score = EXCLUDED.score, updated_at = now()",
     )
@@ -149,11 +149,11 @@ pub struct PlayerAttempt {
     pub last_name: String,
     pub guesses: Vec<String>,
     pub score: Option<i32>,
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// All players who have started today's (or a given day's) puzzle, finished ones first
-/// (best score first), unfinished ones last.
+/// All players who have started a given day's puzzle.
 pub async fn list_attempts_for_date(
     db: &PgPool,
     date: NaiveDate,
@@ -165,15 +165,15 @@ pub async fn list_attempts_for_date(
         last_name: String,
         guesses: Vec<String>,
         score: Option<i32>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
         updated_at: chrono::DateTime<chrono::Utc>,
     }
 
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT a.user_id, u.first_name, u.last_name, a.guesses, a.score, a.updated_at
+        "SELECT a.user_id, u.first_name, u.last_name, a.guesses, a.score, a.started_at, a.updated_at
          FROM portal_sutom_attempt a
          JOIN auth_user u ON u.id = a.user_id
-         WHERE a.game_date = $1
-         ORDER BY (a.score IS NULL), a.score, u.first_name",
+         WHERE a.game_date = $1",
     )
     .bind(date)
     .fetch_all(db)
@@ -187,64 +187,115 @@ pub async fn list_attempts_for_date(
             last_name: r.last_name,
             guesses: r.guesses,
             score: r.score,
+            started_at: r.started_at,
             updated_at: r.updated_at,
         })
         .collect())
 }
 
+#[derive(sqlx::FromRow)]
 pub struct ScoreRow {
     pub user_id: i32,
     pub first_name: String,
     pub last_name: String,
     pub score: i32,
+    /// The frozen par, or for a day not frozen yet (e.g. today) the live estimate from
+    /// the attempts finished so far.
     pub par: i32,
     pub game_date: NaiveDate,
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_first: bool,
 }
 
-/// Every finished (scored) attempt in the last 30 days whose day already has a frozen
-/// par, joined with the player's name — the raw material for the leaderboard. `is_first`
-/// flags whichever attempt was earliest to finish that particular day.
-pub async fn list_scored_attempts_since(
+/// Every attempt with a game date in `[from, to]` finished before `finished_before`,
+/// joined with the player's name — the raw material for the leaderboard. `is_first` flags
+/// whichever of those attempts was earliest to finish that particular day.
+pub async fn list_scored_attempts_between(
     db: &PgPool,
-    since: NaiveDate,
+    from: NaiveDate,
+    to: NaiveDate,
+    finished_before: chrono::DateTime<chrono::Utc>,
 ) -> Result<Vec<ScoreRow>, sqlx::Error> {
-    #[derive(sqlx::FromRow)]
-    struct Row {
-        user_id: i32,
-        first_name: String,
-        last_name: String,
-        score: i32,
-        par: i32,
-        game_date: NaiveDate,
-        updated_at: chrono::DateTime<chrono::Utc>,
-        is_first: bool,
-    }
-
-    let rows = sqlx::query_as::<_, Row>(
-        "SELECT a.user_id, u.first_name, u.last_name, a.score, w.par, a.game_date, a.updated_at,
+    sqlx::query_as::<_, ScoreRow>(
+        "SELECT a.user_id, u.first_name, u.last_name, a.score, a.game_date, a.started_at, a.updated_at,
+                COALESCE(w.par, CEIL(AVG(a.score) OVER (PARTITION BY a.game_date))::int) AS par,
                 (RANK() OVER (PARTITION BY a.game_date ORDER BY a.updated_at) = 1) AS is_first
          FROM portal_sutom_attempt a
          JOIN auth_user u ON u.id = a.user_id
          JOIN portal_sutom_word w ON w.game_date = a.game_date
-         WHERE a.game_date >= $1 AND a.score IS NOT NULL AND w.par IS NOT NULL",
+         WHERE a.game_date BETWEEN $1 AND $2 AND a.score IS NOT NULL AND a.updated_at < $3",
     )
-    .bind(since)
+    .bind(from)
+    .bind(to)
+    .bind(finished_before)
     .fetch_all(db)
-    .await?;
+    .await
+}
 
-    Ok(rows
-        .into_iter()
-        .map(|r| ScoreRow {
-            user_id: r.user_id,
-            first_name: r.first_name,
-            last_name: r.last_name,
-            score: r.score,
-            par: r.par,
-            game_date: r.game_date,
-            updated_at: r.updated_at,
-            is_first: r.is_first,
-        })
-        .collect())
+// ---- Monthly rankings ----
+
+/// One player's line in a month's ranking, frozen or computed live.
+#[derive(sqlx::FromRow)]
+pub struct MonthRankingEntry {
+    pub user_id: i32,
+    pub first_name: String,
+    pub last_name: String,
+    /// 1 = winner of the month.
+    pub rank: i32,
+    pub points: f64,
+    pub games_played: i32,
+    pub avg_guesses: f64,
+}
+
+/// A month's frozen ranking, best first, or empty if that month isn't frozen.
+pub async fn month_ranking(db: &PgPool, month: NaiveDate) -> Result<Vec<MonthRankingEntry>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT r.user_id, u.first_name, u.last_name, r.rank, r.points, r.games_played, r.avg_guesses
+         FROM portal_sutom_month_ranking r
+         JOIN auth_user u ON u.id = r.user_id
+         WHERE r.month = $1
+         ORDER BY r.rank",
+    )
+    .bind(month)
+    .fetch_all(db)
+    .await
+}
+
+/// First day of every month whose ranking is frozen.
+pub async fn frozen_months(db: &PgPool) -> Result<Vec<NaiveDate>, sqlx::Error> {
+    sqlx::query_scalar("SELECT DISTINCT month FROM portal_sutom_month_ranking").fetch_all(db).await
+}
+
+/// Each player's stars: how many frozen months they won, as (user id, count).
+pub async fn star_counts(db: &PgPool) -> Result<Vec<(i32, i64)>, sqlx::Error> {
+    sqlx::query_as("SELECT user_id, COUNT(*) FROM portal_sutom_month_ranking WHERE rank = 1 GROUP BY user_id")
+        .fetch_all(db)
+        .await
+}
+
+/// Freezes a month's whole ranking in one transaction, so a month is either fully
+/// frozen or not at all. Rows already there are left untouched.
+pub async fn insert_month_ranking(
+    db: &PgPool,
+    month: NaiveDate,
+    entries: &[MonthRankingEntry],
+) -> Result<(), sqlx::Error> {
+    let mut tx = db.begin().await?;
+    for e in entries {
+        sqlx::query(
+            "INSERT INTO portal_sutom_month_ranking (month, user_id, rank, points, games_played, avg_guesses)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (month, user_id) DO NOTHING",
+        )
+        .bind(month)
+        .bind(e.user_id)
+        .bind(e.rank)
+        .bind(e.points)
+        .bind(e.games_played)
+        .bind(e.avg_guesses)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await
 }

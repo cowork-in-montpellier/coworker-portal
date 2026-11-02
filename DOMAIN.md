@@ -692,7 +692,7 @@ Both feeds set `Last-Modified` from the most recent `created_at` among included 
 A daily French word-guessing game for members, based on the public
 [SUTOM](https://sutom.nocle.fr) instance. Every member plays the same word as the public
 site each day. Scores are shared between members through a per-day scoreboard and a
-rolling 30-day leaderboard.
+monthly leaderboard.
 
 ### Domain types
 
@@ -728,6 +728,7 @@ type Attempt = {
     gameDate: Date       // ref DailyWord
     guesses: [string]    // ordered, cleaned guesses submitted so far
     score: int | null    // null = in progress; 1..6 = solved in N guesses; 7 = failed (FAILED_SCORE)
+    startedAt: DateTime | null  // time of the first submission; null for attempts begun before it was tracked
     updatedAt: DateTime  // time of the last submission — the completion time once score is set
 
     // invariant: one attempt per (userId, gameDate)
@@ -748,7 +749,8 @@ Constants:
 |------|-------|---------|
 | `MAX_ATTEMPTS` | `6` | guesses allowed per day |
 | `FAILED_SCORE` | `7` | score recorded when all attempts are used without finding the word |
-| `HISTORY_WINDOW_DAYS` | `30` | playable window, today included; also the leaderboard window |
+| `HISTORY_WINDOW_DAYS` | `30` | playable window, today included |
+| `FAST_FINISH_SECS` | `60` | under this time between the first guess and solving it, the speed bonus applies |
 
 ### References to other modules
 
@@ -822,21 +824,38 @@ else:
     divisor = score > par ? 2 : 1               // over par costs less than under par earns
     points  = 3 + diff / divisor
             + (firstToFinish ? 0.5 : 0)
-    if catchup: points *= 0.5                   // bonus included
+            + (fast ? 0.5 : 0)
+    points *= daysLate == 0 ? 1 : daysLate == 1 ? 0.75 : 0.5   // bonuses included
 ```
 
 - **First to finish**: the finished attempt with the earliest `updatedAt` for that day, win
   or lose. A failed first finisher still gets 0 points.
-- **Catch-up**: an attempt completed on a later Paris-local day than `gameDate`.
+- **Fast**: solved less than `FAST_FINISH_SECS` after `startedAt` (the first guess), so a
+  first-guess win always qualifies. Never true without a `startedAt`.
+- **Days late**: Paris-local days between `gameDate` and `updatedAt` (0 = on the day).
 
 Examples (par 4): score 4 → 3, score 1 → 6, score 6 → 2, score 4 first → 3.5,
-score 4 catch-up → 1.5, score 4 first + catch-up → 1.75.
+score 4 fast → 3.5, score 4 next day → 2.25, score 4 two days late → 1.5,
+score 4 first + next day → 2.625.
 
-#### Result visibility
-On a day's scoreboard, a player's score, letter sequence and points are shown to the
-caller only when that player has finished and either the player is the caller or the
-caller has finished the day too. Otherwise only the name and the `finished` flag are
-shown. This way nobody sees letter feedback before playing.
+#### Monthly ranking
+Players are ranked over one calendar month by total points, then by the lowest average
+`score` over the days they finished (days not played don't count; a failure counts as 7).
+Only games on that month's grids **finished before the month ended** (midnight, Paris
+time, on the 1st of the next month) count: a later catch-up still earns its day's points
+on the scoreboard, but never counts toward any month's ranking.
+Days before the competition start (2026-09-23) never count. Days whose par isn't frozen
+yet (e.g. today) use the effective par. Ties left after the average go to the player
+with more games played, then to the lower user id, so the order is always the same.
+
+#### Month freeze
+Once a month from October 2026 on is over, its whole ranking is frozen once in
+`portal_sutom_month_ranking` by the nightly task (and at startup, for any month still
+missing). Its first line is the month's winner, who earns a ⭐. A month nobody played
+has nothing to freeze.
+
+A player's **stars** belong to the player, not to a month: they are the number of frozen
+months the player won, so any ranking (past or current) shows the stars held today.
 
 ### Postgres
 
@@ -863,9 +882,22 @@ This app owns the schema and data for:
 | `game_date` | DATE | FK → `portal_sutom_word.game_date`, cascade delete |
 | `guesses` | TEXT[] | default `'{}'` |
 | `score` | INT nullable | null while in progress |
+| `started_at` | TIMESTAMPTZ nullable | set on the first submission, never updated |
 | `updated_at` | TIMESTAMPTZ | default `now()`, refreshed on each submission |
 
 Constraint: `UNIQUE (user_id, game_date)`.
+
+**`portal_sutom_month_ranking`**
+| Column | Type | Notes |
+|--------|------|-------|
+| `month` | DATE | first day of the month |
+| `user_id` | INT | FK → `auth_user.id`, cascade delete |
+| `rank` | INT | 1 = winner of the month |
+| `points` | DOUBLE PRECISION | |
+| `games_played` | INT | |
+| `avg_guesses` | DOUBLE PRECISION | |
+
+Primary key: `(month, user_id)`.
 
 ### Edges
 
@@ -928,17 +960,19 @@ letter feedback locally, so this is a trust-based game.
   - returns `{ score }`
 
 #### Day scoreboard
-- `GET /sutom/day/{date}/scoreboard` — every player who has started the day. Finished
-  players come first (best score first), then unfinished ones, then by first name. Each
-  entry has `finished`, `revealed`, `first_to_finish` and, when revealed, `score`, the
-  per-guess `sequence` of `LetterStatus` and the day's `points` (computed with the
-  effective par). See [Result visibility](#result-visibility).
+- `GET /sutom/day/{date}/scoreboard` — every player who has submitted at least one guess
+  that day. Finished players come first, by fewest guesses, then most points, then
+  earliest finish; unfinished ones follow by first name. Each entry has `finished`,
+  `revealed`, `first_to_finish`, `fast`, `days_late`, `score`, `points` (computed with the
+  effective par) and, when revealed, the per-guess `sequence` of `LetterStatus`. See
+  [Result visibility](#result-visibility).
 
 #### Leaderboard
-- `GET /sutom/leaderboard` — total points per player over the last 30 days (`since` =
-  window start), sorted by points descending, with `games_played`. Only finished
-  attempts on days with a **frozen** par count, so today's games are added after the
-  nightly task.
+- `GET /sutom/leaderboard?month=YYYY-MM` — the [monthly ranking](#monthly-ranking) for
+  that month (default: the current one). A month that is over (`is_final`) is served
+  from its [frozen ranking](#month-freeze); the current one is computed on each call.
+  Each entry has `points`, `games_played`, `avg_guesses` and `stars` (months won to
+  date).
 
 #### History
 - `GET /sutom/history` — every stored day in the window (most recent first), with its
@@ -947,7 +981,8 @@ letter feedback locally, so this is a trust-based game.
 #### Nightly refresh
 Background task, run in Europe/Paris time:
 1. Freeze yesterday's par (no-op if already set or nobody finished).
-2. Warm today's word with `ensure_daily_word(today)`, then its dictionary in the cache.
+2. Freeze the ranking of every completed month not frozen yet (also run once at startup).
+3. Warm today's word with `ensure_daily_word(today)`, then its dictionary in the cache.
 
 Failures are logged and do not stop the scheduler. The cron expression is validated at
 startup, and an invalid one stops the server from starting.

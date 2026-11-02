@@ -26,9 +26,11 @@ pub struct ScoreboardPlayer {
     pub sequence: Option<Vec<Vec<domain::LetterStatus>>>,
     /// True for whoever finished this day's puzzle earliest, win or lose.
     pub first_to_finish: bool,
-    /// True if this was a later catch-up play rather than played on the day itself —
-    /// halves the points. Lets the UI explain a player's point total precisely.
-    pub is_catchup: bool,
+    /// True if the word was found less than a minute after the first guess.
+    pub fast: bool,
+    /// How many days after the puzzle's own day it was finished (0 = on the day). Lets
+    /// the UI explain a player's point total precisely.
+    pub days_late: i32,
     /// This day's leaderboard points for the player, once revealed.
     pub points: Option<f64>,
 }
@@ -74,27 +76,26 @@ pub async fn get_scoreboard(
         .min_by_key(|a| a.updated_at)
         .map(|a| a.user_id);
 
-    // Compute each player's points up front so the list can be ranked by them — points,
-    // not raw score, is the true ranking (a first-to-finish bonus or a catch-up discount
-    // can reorder two equal scores) — ties broken by whoever finished earlier. Players
-    // still playing have no points yet and always sort after everyone who has finished.
+    // Ranked by number of guesses, then by points (which also reflect bonuses and
+    // lateness), then by whoever finished first. Players still playing sort last.
     let mut scored: Vec<_> = attempts
         .into_iter()
         .map(|a| {
             let is_first = Some(a.user_id) == first_finisher_id;
-            let is_catchup = domain::is_catchup_play(date, a.updated_at);
+            let days_late = domain::days_late(date, a.updated_at);
+            let fast = a.score.is_some_and(|score| domain::is_fast_finish(a.started_at, a.updated_at, score));
             let points = match (a.score, par) {
-                (Some(score), Some(par)) => Some(domain::leaderboard_points(par, score, is_first, is_catchup)),
+                (Some(score), Some(par)) => Some(domain::leaderboard_points(par, score, is_first, fast, days_late)),
                 _ => None,
             };
-            (a, is_first, is_catchup, points)
+            (a, is_first, fast, days_late, points)
         })
         .collect();
 
-    scored.sort_by(|(a, _, _, pa), (b, _, _, pb)| match (pa, pb) {
-        (Some(pa), Some(pb)) => pb
-            .partial_cmp(pa)
-            .unwrap_or(Ordering::Equal)
+    scored.sort_by(|(a, _, _, _, pa), (b, _, _, _, pb)| match (a.score, b.score) {
+        (Some(sa), Some(sb)) => sa
+            .cmp(&sb)
+            .then_with(|| pb.partial_cmp(pa).unwrap_or(Ordering::Equal))
             .then_with(|| a.updated_at.cmp(&b.updated_at)),
         (Some(_), None) => Ordering::Less,
         (None, Some(_)) => Ordering::Greater,
@@ -103,7 +104,7 @@ pub async fn get_scoreboard(
 
     let players = scored
         .into_iter()
-        .map(|(a, is_first, is_catchup, points)| {
+        .map(|(a, is_first, fast, days_late, points)| {
             let finished = a.score.is_some();
             let revealed = finished && (a.user_id == user.id || viewer_finished);
             let sequence = revealed
@@ -118,7 +119,8 @@ pub async fn get_scoreboard(
                 score: a.score,
                 sequence,
                 first_to_finish: is_first,
-                is_catchup,
+                fast,
+                days_late,
                 points,
             }
         })

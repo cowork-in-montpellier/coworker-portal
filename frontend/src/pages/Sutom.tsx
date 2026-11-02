@@ -1,4 +1,4 @@
-import { addDays, format } from 'date-fns'
+import { addDays, addMonths, format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
@@ -29,6 +29,8 @@ const REVEAL_DELAY_MS = 300
 // Mirrors the backend's leaderboard_start_date(): days before this were warm-up/training
 // and never count toward leaderboard points.
 const LEADERBOARD_START_DATE = '2026-09-23'
+// Earliest month the monthly leaderboard can be browsed back to.
+const FIRST_LEADERBOARD_MONTH = '2026-10'
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -80,7 +82,7 @@ function keyboardStatuses(target: string, guesses: string[]): Record<string, Let
 const KEYBOARD_ROWS = [
   ['A', 'Z', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
   ['Q', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'M'],
-  ['W', 'X', 'C', 'V', 'B', 'N', 'BACKSPACE', '.', 'ENTER'],
+  ['.', 'W', 'X', 'C', 'V', 'B', 'N', 'BACKSPACE', 'ENTER'],
 ]
 
 // The original SUTOM's own palette: unfilled/not-found letters stay the grid's blue,
@@ -90,6 +92,10 @@ const COLOR_UNKNOWN = '#0077c7'
 const COLOR_CORRECT = '#e7002a'
 const COLOR_PRESENT = '#ffbd00'
 const COLOR_ABSENT_KEY = '#707070'
+
+// An untyped slot of the line being typed. Rendered as a faint dot so it can't be confused
+// with a "." the player typed on purpose as a placeholder while thinking.
+const EMPTY_SLOT = '_'
 
 function miniCellClass(status: LetterStatus): string {
   switch (status) {
@@ -126,16 +132,17 @@ function keyStyle(status: LetterStatus | undefined): CSSProperties | undefined {
   }
 }
 
-// Single/double chevrons as SVG paths rather than text glyphs, so they sit dead-center
-// in a circular button regardless of font metrics.
+// Icons as SVG paths rather than text glyphs or emoji, so they sit dead-center in a
+// circular button regardless of font metrics.
 const CHEVRON_LEFT = 'M15.75 19.5 8.25 12l7.5-7.5'
 const CHEVRON_RIGHT = 'M8.25 4.5l7.5 7.5-7.5 7.5'
-const CHEVRON_DOUBLE_LEFT = 'M18.75 19.5l-7.5-7.5 7.5-7.5m-6 15L5.25 12l7.5-7.5'
-const CHEVRON_DOUBLE_RIGHT = 'M11.25 4.5l7.5 7.5-7.5 7.5m-6-15l7.5 7.5-7.5 7.5'
+const ICON_CALENDAR =
+  'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5'
+const ICON_HOURGLASS = 'M6 3h12M6 21h12M7.5 3c0 4.5 4.5 6 4.5 9s-4.5 4.5-4.5 9M16.5 3c0 4.5-4.5 6-4.5 9s4.5 4.5 4.5 9'
 
-function ChevronIcon({ path }: { path: string }) {
+function OutlineIcon({ path, size = 'w-4 h-4' }: { path: string; size?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="w-4 h-4">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={size}>
       <path strokeLinecap="round" strokeLinejoin="round" d={path} />
     </svg>
   )
@@ -154,7 +161,11 @@ function GridCell({ letter, status }: { letter: string; status: LetterStatus | u
       {status === 'present' && (
         <span className="absolute inset-0 rounded-full" style={{ backgroundColor: COLOR_PRESENT }} />
       )}
-      <span className={`relative ${letter === '.' ? 'self-end pb-0.5' : ''}`}>{letter === '.' ? '·' : letter}</span>
+      {letter === '.' || letter === EMPTY_SLOT ? (
+        <span className={`relative self-end pb-0.5 ${letter === EMPTY_SLOT ? 'opacity-40' : ''}`}>·</span>
+      ) : (
+        <span className="relative">{letter}</span>
+      )}
     </div>
   )
 }
@@ -194,7 +205,20 @@ function golfBadge(par: number | null, score: number | null): { emoji: string; t
   return null
 }
 
-// Mirrors the backend's leaderboard_points formula for a plain (no bonus, no catchup)
+// Monthly wins as stars, every five of them collapsed into a shooting star:
+// 7 wins → 💫⭐⭐.
+function winStars(wins: number): string {
+  return '💫'.repeat(Math.floor(wins / 5)) + '⭐'.repeat(wins % 5)
+}
+
+// Badge for a game finished after its own day: next day, or later.
+function lateBadge(daysLate: number): { emoji: string; title: string } | null {
+  if (daysLate <= 0) return null
+  if (daysLate === 1) return { emoji: '🌓', title: 'Terminé le lendemain (× 75 %)' }
+  return { emoji: '⏰', title: `Terminé avec ${daysLate} jours de retard (× 50 %)` }
+}
+
+// Mirrors the backend's leaderboard_points formula for a plain (no bonus, on time)
 // score relative to a given par — used to render the reference table in the info modal.
 function basePoints(par: number, score: number): number {
   return 3 + (par - score) / (score > par ? 2 : 1)
@@ -212,6 +236,7 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
     <ul className="flex flex-col gap-1.5">
       {scoreboard.players.map((p: ScoreboardPlayer, i: number) => {
         const golf = golfBadge(par, p.score)
+        const late = lateBadge(p.days_late)
         return (
           <li key={p.user_id} className="border border-base-200 rounded-lg overflow-hidden">
             <button
@@ -230,12 +255,20 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
               <span>
                 {i + 1}. {displayName(p.first_name, p.last_initial)}
                 {p.first_to_finish && <span title="Premier à finir"> 🥇</span>}
-                {golf && <span title={golf.title}> {golf.emoji}</span>}
+                {p.fast && <span title="Trouvé en moins d'une minute"> ⚡</span>}
+                {late && <span title={late.title}> {late.emoji}</span>}
+                {p.score === 1 ? (
+                  <span title="Headshot"> 🎯</span>
+                ) : (
+                  golf && <span title={golf.title}> {golf.emoji}</span>
+                )}
               </span>
               {p.finished ? (
                 <span className="flex items-center gap-2">
                   <span className="badge badge-sm">{scoreLabel(p.score)}</span>
-                  {p.points != null && <span className="text-xs text-base-content/60">{p.points.toFixed(2)} pts</span>}
+                  {p.points != null && (
+                    <span className="text-xs text-base-content/60">{p.points.toFixed(2)} points</span>
+                  )}
                 </span>
               ) : (
                 <span className="text-xs text-base-content/40">En cours…</span>
@@ -255,11 +288,13 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
                 {par != null && p.score != null && p.points != null && (
                   <ul className="text-[11px] text-base-content/50 leading-tight pl-3">
                     <li>
-                      Score {p.score} vs par {par} = {basePoints(par, p.score).toFixed(1)} pts
+                      Score {p.score} vs par {par} = {basePoints(par, p.score).toFixed(1)} points
                     </li>
-                    {p.first_to_finish && <li>Premier à finir : +0,5 pt</li>}
-                    {p.is_catchup && <li>Rattrapage : × 50%</li>}
-                    <li className="font-medium text-base-content/70">Total : {p.points.toFixed(2)} pts</li>
+                    {p.first_to_finish && <li>Premier à finir : +0,5 point</li>}
+                    {p.fast && <li>Moins d'une minute : +0,5 point</li>}
+                    {p.days_late === 1 && <li>Le lendemain : × 75 %</li>}
+                    {p.days_late > 1 && <li>En retard : × 50 %</li>}
+                    <li className="font-medium text-base-content/70">Total : {p.points.toFixed(2)} points</li>
                   </ul>
                 )}
               </div>
@@ -285,7 +320,7 @@ function LeaderboardPanel({ leaderboard }: { leaderboard: Leaderboard | null }) 
           <th>Joueur</th>
           <th
             className="text-right text-base-content/40 font-normal"
-            title="Indicatif uniquement, sans effet sur le classement — les jours non joués ne comptent pas"
+            title="Départage les égalités de score (le plus bas l'emporte) — les jours non joués ne comptent pas"
           >
             Coups moyens
           </th>
@@ -296,7 +331,12 @@ function LeaderboardPanel({ leaderboard }: { leaderboard: Leaderboard | null }) 
         {leaderboard.entries.map((e, i) => (
           <tr key={e.user_id}>
             <td className="text-base-content/40">{i + 1}</td>
-            <td>{displayName(e.first_name, e.last_initial)}</td>
+            <td>
+              {displayName(e.first_name, e.last_initial)}
+              {e.stars > 0 && (
+                <span title={`${e.stars} mois remporté${e.stars > 1 ? 's' : ''}`}> {winStars(e.stars)}</span>
+              )}
+            </td>
             <td className="text-right text-base-content/50">{e.avg_guesses.toFixed(2)}</td>
             <td className="text-right font-semibold">{e.points.toFixed(2)}</td>
           </tr>
@@ -320,16 +360,24 @@ function PointsInfoModal() {
       </button>
       <dialog ref={dialogRef} className="modal">
         <div className="modal-box">
-          <h3 className="font-bold text-lg">Comment les points sont calculés</h3>
+          <form method="dialog">
+            <button className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" aria-label="Fermer">
+              ✕
+            </button>
+          </form>
+          <h3 className="font-bold text-lg pr-8">Comment les points sont calculés ?</h3>
           <div className="py-4 text-sm flex flex-col gap-3">
             <p>
               Chaque jour, un <strong>par</strong> est calculé : la moyenne (arrondie au supérieur) des scores de tous
-              les joueurs ayant terminé la grille. Tant que la journée n'est pas finie, ce par est provisoire et peut
-              encore bouger ; il est ensuite figé pour toujours, même si quelqu'un complète la grille plus tard.
+              les joueurs ayant terminé la grille.
             </p>
             <p>
-              Un score égal au par vaut donc 3 points ; chaque coup de moins en rapporte 1 point de plus, chaque coup de
-              plus en retire 0,5 point.
+              Tant que la journée n'est pas finie, ce <strong>par</strong> est provisoire et peut encore bouger ; il est
+              ensuite figé pour toujours, même si quelqu'un complète la grille plus tard.
+            </p>
+            <p>
+              Un score égal au <strong>par</strong> vaut donc 3 points ; chaque coup de moins en rapporte 1 point de
+              plus, chaque coup de plus en retire 0,5 point.
             </p>
             <div className="overflow-x-auto">
               <table className="table table-xs text-center">
@@ -357,20 +405,40 @@ function PointsInfoModal() {
                 </tbody>
               </table>
             </div>
-            <p>🥇 +0,5 point bonus pour le premier joueur à terminer la grille du jour.</p>
+            <p>Bonus :</p>
+            <ul className="list-disc pl-5 -mt-2">
+              <li>
+                🥇 +0,5 point pour le <strong>premier</strong> joueur à terminer la grille du jour ;
+              </li>
+              <li>
+                ⚡ +0,5 point si le mot est trouvé moins d'<strong>une minute</strong> après la première proposition.
+              </li>
+            </ul>
+            <p>Malus de retard :</p>
+            <ul className="list-disc pl-5 -mt-2">
+              <li>
+                🌓 grille terminée le lendemain : <strong>75 %</strong> des points ;
+              </li>
+              <li>
+                ⏰ terminée plus tard : <strong>50 %</strong> des points.
+              </li>
+            </ul>
+            <p>Badges honorifiques :</p>
+            <ul className="list-disc pl-5 -mt-2">
+              <li>🎯 Headshot : trouvé du premier coup</li>
+              <li>
+                🦅 Eagle : trouvé en <strong>par</strong> − 2 tentatives
+              </li>
+              <li>
+                🐦 Birdie : trouvé en <strong>par</strong> − 1 tentatives
+              </li>
+            </ul>
             <p>
-              🐦 Birdie (score = par − 1) et 🦅 Eagle (score ≤ par − 2) sont affichés à côté du score, à titre
-              honorifique.
+              Le classement est mensuel, il est réinitialisé le 1er de chaque mois. À la fin du mois, il est figé : une
+              grille du mois rattrapée après sa fin rapporte toujours ses points du jour, mais ne compte plus dans le
+              classement du mois.
             </p>
-            <p>
-              Rejouer une grille des jours précédents ne rapporte que <strong>50 %</strong> des points obtenus (bonus du
-              premier compris).
-            </p>
-          </div>
-          <div className="modal-action">
-            <form method="dialog">
-              <button className="btn">Fermer</button>
-            </form>
+            <p>Celui qui termine le premier du mois obtient une ⭐ à côté de son nom et 💫 toutes les 5 étoiles.</p>
           </div>
         </div>
         <form method="dialog" className="modal-backdrop">
@@ -379,6 +447,15 @@ function PointsInfoModal() {
       </dialog>
     </>
   )
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+// "2026-10" → "octobre 2026".
+function monthLabel(month: string): string {
+  return format(parseDateKey(`${month}-01`), 'MMMM yyyy', { locale: fr })
 }
 
 function parseDateKey(dateStr: string): Date {
@@ -408,7 +485,6 @@ export function Sutom() {
   const [revealCount, setRevealCount] = useState(Infinity)
   const [scoreboard, setScoreboard] = useState<Scoreboard | null>(null)
   const [leaderboard, setLeaderboard] = useState<Leaderboard | null>(null)
-  const [includeToday, setIncludeToday] = useState(true)
   const [history, setHistory] = useState<History | null>(null)
   const notify = useToast()
 
@@ -440,18 +516,26 @@ export function Sutom() {
       })
   }, [viewedDate, loadAttempt])
 
-  const refreshLeaderboard = useCallback((include: boolean) => {
-    fetchLeaderboard(include)
+  const refreshLeaderboard = useCallback((month: string) => {
+    fetchLeaderboard(month)
       .then(setLeaderboard)
       .catch(() => {
         /* non-fatal */
       })
   }, [])
 
-  // Independent of which day is being viewed — re-fetched only when the toggle changes.
+  // The leaderboard follows the month of the day being viewed, but can also be browsed
+  // month by month on its own; changing day into another month snaps it back.
+  const viewedMonth = day?.date.slice(0, 7)
+  const [leaderboardMonth, setLeaderboardMonth] = useState<string | undefined>(undefined)
   useEffect(() => {
-    refreshLeaderboard(includeToday)
-  }, [includeToday, refreshLeaderboard])
+    if (viewedMonth) setLeaderboardMonth(viewedMonth)
+  }, [viewedMonth])
+  useEffect(() => {
+    if (!leaderboardMonth) return
+    setLeaderboard(null)
+    refreshLeaderboard(leaderboardMonth)
+  }, [leaderboardMonth, refreshLeaderboard])
 
   const refreshScoreboard = useCallback((date: string) => {
     fetchScoreboard(date)
@@ -508,12 +592,22 @@ export function Sutom() {
         }
         if (result.score !== null) {
           refreshScoreboard(day.date)
-          refreshLeaderboard(includeToday)
+          if (leaderboardMonth) refreshLeaderboard(leaderboardMonth)
         }
       })
       .catch((e) => notify(e instanceof ApiError ? e.message : 'Erreur, réessayez.', 'error'))
       .finally(() => setSubmitting(false))
-  }, [day, gameOver, submitting, currentGuess, guesses, notify, refreshScoreboard, refreshLeaderboard, includeToday])
+  }, [
+    day,
+    gameOver,
+    submitting,
+    currentGuess,
+    guesses,
+    notify,
+    refreshScoreboard,
+    refreshLeaderboard,
+    leaderboardMonth,
+  ])
 
   const typeLetter = useCallback(
     (letter: string) => {
@@ -603,10 +697,18 @@ export function Sutom() {
   const canGoNext = !!todayDate && day.date < todayDate
   const goToDate = (date: string) => setViewedDate(date === todayDate ? undefined : date)
 
-  // `history.entries` is sorted most-recent-first, so the first unfinished entry is the
-  // most recent one — handy for jumping straight to whatever's still left to play.
-  const lastUnfinishedDate = history?.entries.find((h) => h.my_score == null)?.date
-  const canGoToLastUnfinished = !!lastUnfinishedDate && lastUnfinishedDate !== day.date
+  // Jumps to a grid still left to play: the most recent one, or, when the day shown is
+  // itself still pending, the next older pending one. `history.entries` is sorted
+  // most-recent-first; the current day's status comes from `score`, which is up to date
+  // even right after finishing it.
+  const pendingDays = history?.entries.filter((h) => h.my_score == null && h.date !== day.date) ?? []
+  const lastUnfinishedDate = (score === null ? pendingDays.find((h) => h.date < day.date) : pendingDays[0])?.date
+
+  const shownMonth = leaderboardMonth ?? day.date.slice(0, 7)
+  const currentMonth = (todayDate ?? day.date).slice(0, 7)
+  const shiftMonth = (delta: number) =>
+    setLeaderboardMonth(format(addMonths(parseDateKey(`${shownMonth}-01`), delta), 'yyyy-MM'))
+  const canGoToLastUnfinished = !!lastUnfinishedDate
 
   // Positions confirmed correct by any earlier guess this game, e.g. to remind the
   // player of them on a fresh, untouched line — cleared the moment they start typing.
@@ -635,7 +737,7 @@ export function Sutom() {
       // The line you're about to fill in: first letter shown crisp, untyped slots
       // marked with a placeholder dot so the word's length stays visible.
       const letters = currentGuess.split('')
-      while (letters.length < wordLength) letters.push('.')
+      while (letters.length < wordLength) letters.push(EMPTY_SLOT)
       const statuses: (LetterStatus | undefined)[] = Array(wordLength).fill(undefined)
       // Nothing typed yet beyond the given first letter: remind the player of
       // already-confirmed correct-position letters. The instant they type, this
@@ -669,10 +771,10 @@ export function Sutom() {
                 className="btn btn-circle btn-outline btn-primary"
                 onClick={() => lastUnfinishedDate && goToDate(lastUnfinishedDate)}
                 disabled={!canGoToLastUnfinished}
-                aria-label="Dernière grille non terminée"
-                title="Dernière grille non terminée"
+                aria-label="Dernière grille en attente"
+                title="Dernière grille en attente"
               >
-                <ChevronIcon path={CHEVRON_DOUBLE_LEFT} />
+                <OutlineIcon path={ICON_HOURGLASS} />
               </button>
               <button
                 className="btn btn-circle btn-outline btn-primary"
@@ -681,13 +783,13 @@ export function Sutom() {
                 aria-label="Jour précédent"
                 title="Jour précédent"
               >
-                <ChevronIcon path={CHEVRON_LEFT} />
+                <OutlineIcon path={CHEVRON_LEFT} />
               </button>
             </div>
             <div className="flex-1 text-center">
               <h2 className="text-xl font-bold">SUTOM #{day.puzzle_number}</h2>
               <div className="text-sm text-base-content/60">
-                {format(parseDateKey(day.date), 'd MMMM yyyy', { locale: fr })}
+                {capitalize(format(parseDateKey(day.date), 'EEEE d MMMM yyyy', { locale: fr }))}
               </div>
             </div>
             <div className="flex items-center gap-1">
@@ -698,7 +800,7 @@ export function Sutom() {
                 aria-label="Jour suivant"
                 title="Jour suivant"
               >
-                <ChevronIcon path={CHEVRON_RIGHT} />
+                <OutlineIcon path={CHEVRON_RIGHT} />
               </button>
               <button
                 className="btn btn-circle btn-outline btn-primary"
@@ -707,7 +809,7 @@ export function Sutom() {
                 aria-label="Aujourd'hui"
                 title="Aujourd'hui"
               >
-                <ChevronIcon path={CHEVRON_DOUBLE_RIGHT} />
+                <OutlineIcon path={ICON_CALENDAR} />
               </button>
             </div>
           </div>
@@ -814,18 +916,35 @@ export function Sutom() {
           <div className="card bg-base-100 shadow-sm">
             <div className="card-body p-4">
               <div className="flex items-center justify-between mb-2 gap-2">
-                <h3 className="font-semibold text-sm">
-                  Classement — 30 derniers jours{' '}
-                  <span className="font-normal text-xs text-base-content/50 ml-2">
-                    <input
-                      type="checkbox"
-                      className="toggle toggle-xs align-middle mx-1"
-                      checked={includeToday}
-                      onChange={(e) => setIncludeToday(e.target.checked)}
-                      title="Inclure les résultats provisoires du jour dans le classement"
-                    />
-                    dont aujourd'hui
-                  </span>
+                <h3 className="font-semibold text-sm flex items-center gap-1">
+                  Classement —
+                  <button
+                    className="btn btn-circle btn-ghost btn-xs"
+                    onClick={() => shiftMonth(-1)}
+                    disabled={shownMonth <= FIRST_LEADERBOARD_MONTH}
+                    aria-label="Mois précédent"
+                    title="Mois précédent"
+                  >
+                    <OutlineIcon path={CHEVRON_LEFT} size="w-3 h-3" />
+                  </button>
+                  {monthLabel(shownMonth)}
+                  <button
+                    className="btn btn-circle btn-ghost btn-xs"
+                    onClick={() => shiftMonth(1)}
+                    disabled={shownMonth >= currentMonth}
+                    aria-label="Mois suivant"
+                    title="Mois suivant"
+                  >
+                    <OutlineIcon path={CHEVRON_RIGHT} size="w-3 h-3" />
+                  </button>
+                  {leaderboard?.is_final && leaderboard.month === shownMonth && (
+                    <span
+                      className="text-base-content/40 font-normal"
+                      title="Mois terminé : les rattrapages joués depuis ne comptent plus"
+                    >
+                      (définitif)
+                    </span>
+                  )}
                 </h3>
                 <PointsInfoModal />
               </div>

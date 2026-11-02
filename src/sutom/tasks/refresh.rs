@@ -9,6 +9,10 @@ pub async fn run(state: &State) {
         tracing::error!(date = %yesterday, error = %e, "Sutom par: failed");
     }
 
+    if let Err(e) = service::finalize_month_rankings(state, today).await {
+        tracing::error!(error = %e, "Sutom month rankings: failed");
+    }
+
     tracing::info!(date = %today, "Sutom refresh: starting");
     match service::ensure_daily_word(state, today).await {
         Ok(daily) => {
