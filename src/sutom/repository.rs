@@ -129,8 +129,8 @@ pub async fn upsert_attempt(
     score: Option<i32>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO portal_sutom_attempt (user_id, game_date, guesses, score, updated_at)
-         VALUES ($1, $2, $3, $4, now())
+        "INSERT INTO portal_sutom_attempt (user_id, game_date, guesses, score, started_at, updated_at)
+         VALUES ($1, $2, $3, $4, now(), now())
          ON CONFLICT (user_id, game_date)
          DO UPDATE SET guesses = EXCLUDED.guesses, score = EXCLUDED.score, updated_at = now()",
     )
@@ -149,11 +149,11 @@ pub struct PlayerAttempt {
     pub last_name: String,
     pub guesses: Vec<String>,
     pub score: Option<i32>,
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// All players who have started today's (or a given day's) puzzle, finished ones first
-/// (best score first), unfinished ones last.
+/// All players who have started a given day's puzzle.
 pub async fn list_attempts_for_date(
     db: &PgPool,
     date: NaiveDate,
@@ -165,15 +165,15 @@ pub async fn list_attempts_for_date(
         last_name: String,
         guesses: Vec<String>,
         score: Option<i32>,
+        started_at: Option<chrono::DateTime<chrono::Utc>>,
         updated_at: chrono::DateTime<chrono::Utc>,
     }
 
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT a.user_id, u.first_name, u.last_name, a.guesses, a.score, a.updated_at
+        "SELECT a.user_id, u.first_name, u.last_name, a.guesses, a.score, a.started_at, a.updated_at
          FROM portal_sutom_attempt a
          JOIN auth_user u ON u.id = a.user_id
-         WHERE a.game_date = $1
-         ORDER BY (a.score IS NULL), a.score, u.first_name",
+         WHERE a.game_date = $1",
     )
     .bind(date)
     .fetch_all(db)
@@ -187,64 +187,46 @@ pub async fn list_attempts_for_date(
             last_name: r.last_name,
             guesses: r.guesses,
             score: r.score,
+            started_at: r.started_at,
             updated_at: r.updated_at,
         })
         .collect())
 }
 
+#[derive(sqlx::FromRow)]
 pub struct ScoreRow {
     pub user_id: i32,
     pub first_name: String,
     pub last_name: String,
     pub score: i32,
+    /// The frozen par, or for a day not frozen yet (e.g. today) the live estimate from
+    /// the attempts finished so far.
     pub par: i32,
     pub game_date: NaiveDate,
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_first: bool,
 }
 
-/// Every finished (scored) attempt in the last 30 days whose day already has a frozen
-/// par, joined with the player's name — the raw material for the leaderboard. `is_first`
-/// flags whichever attempt was earliest to finish that particular day.
-pub async fn list_scored_attempts_since(
+/// Every finished (scored) attempt with a game date in `[from, to]`, joined with the
+/// player's name — the raw material for the leaderboard. `is_first` flags whichever
+/// attempt was earliest to finish that particular day.
+pub async fn list_scored_attempts_between(
     db: &PgPool,
-    since: NaiveDate,
+    from: NaiveDate,
+    to: NaiveDate,
 ) -> Result<Vec<ScoreRow>, sqlx::Error> {
-    #[derive(sqlx::FromRow)]
-    struct Row {
-        user_id: i32,
-        first_name: String,
-        last_name: String,
-        score: i32,
-        par: i32,
-        game_date: NaiveDate,
-        updated_at: chrono::DateTime<chrono::Utc>,
-        is_first: bool,
-    }
-
-    let rows = sqlx::query_as::<_, Row>(
-        "SELECT a.user_id, u.first_name, u.last_name, a.score, w.par, a.game_date, a.updated_at,
+    sqlx::query_as::<_, ScoreRow>(
+        "SELECT a.user_id, u.first_name, u.last_name, a.score, a.game_date, a.started_at, a.updated_at,
+                COALESCE(w.par, CEIL(AVG(a.score) OVER (PARTITION BY a.game_date))::int) AS par,
                 (RANK() OVER (PARTITION BY a.game_date ORDER BY a.updated_at) = 1) AS is_first
          FROM portal_sutom_attempt a
          JOIN auth_user u ON u.id = a.user_id
          JOIN portal_sutom_word w ON w.game_date = a.game_date
-         WHERE a.game_date >= $1 AND a.score IS NOT NULL AND w.par IS NOT NULL",
+         WHERE a.game_date BETWEEN $1 AND $2 AND a.score IS NOT NULL",
     )
-    .bind(since)
+    .bind(from)
+    .bind(to)
     .fetch_all(db)
-    .await?;
-
-    Ok(rows
-        .into_iter()
-        .map(|r| ScoreRow {
-            user_id: r.user_id,
-            first_name: r.first_name,
-            last_name: r.last_name,
-            score: r.score,
-            par: r.par,
-            game_date: r.game_date,
-            updated_at: r.updated_at,
-            is_first: r.is_first,
-        })
-        .collect())
+    .await
 }
