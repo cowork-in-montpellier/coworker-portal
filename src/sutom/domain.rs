@@ -60,6 +60,20 @@ pub fn month_bounds(date: NaiveDate) -> (NaiveDate, NaiveDate) {
     (first, next_first.pred_opt().expect("day before a month start exists"))
 }
 
+/// When a month's ranking stops counting games: midnight, Paris time, at the start of
+/// the next month. Games finished later never count toward that month.
+pub fn month_end(month: NaiveDate) -> DateTime<Utc> {
+    let (_, last) = month_bounds(month);
+    let next_first = last.succ_opt().expect("day after a month end exists");
+    next_first
+        .and_hms_opt(0, 0, 0)
+        .expect("midnight exists")
+        .and_local_timezone(chrono_tz::Europe::Paris)
+        .earliest()
+        .expect("midnight is never skipped in Paris")
+        .with_timezone(&Utc)
+}
+
 /// First letter of a last name, uppercased (e.g. to disambiguate two players sharing a
 /// first name in the leaderboards), or empty if the last name itself is empty.
 pub fn last_initial(last_name: &str) -> String {
@@ -274,12 +288,20 @@ mod tests {
     }
 
     #[test]
-    fn is_fast_finish_requires_a_solve_within_a_minute_of_opening() {
+    fn is_fast_finish_requires_a_solve_within_a_minute_of_the_first_guess() {
         let start = utc(2026, 9, 21, 9, 0, 0);
         assert!(is_fast_finish(Some(start), utc(2026, 9, 21, 9, 0, 59), 3));
         assert!(!is_fast_finish(Some(start), utc(2026, 9, 21, 9, 1, 0), 3));
         assert!(!is_fast_finish(Some(start), utc(2026, 9, 21, 9, 0, 30), FAILED_SCORE));
         assert!(!is_fast_finish(None, utc(2026, 9, 21, 9, 0, 30), 3));
+    }
+
+    #[test]
+    fn month_end_is_paris_midnight_starting_the_next_month() {
+        // October 2026 ends at midnight on November 1st, Paris winter time (UTC+1).
+        assert_eq!(month_end(NaiveDate::from_ymd_opt(2026, 10, 15).unwrap()), utc(2026, 10, 31, 23, 0, 0));
+        // September 2026 ends at midnight on October 1st, Paris summer time (UTC+2).
+        assert_eq!(month_end(NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()), utc(2026, 9, 30, 22, 0, 0));
     }
 
     #[test]

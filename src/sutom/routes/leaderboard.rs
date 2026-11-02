@@ -1,8 +1,7 @@
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use axum::{Json, extract::{Query, State}};
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -29,14 +28,17 @@ pub struct LeaderboardEntry {
     /// attempt counts as `MAX_ATTEMPTS + 1`). Days not played are skipped rather than
     /// counted against the player. Breaks ties between equal point totals.
     pub avg_guesses: f64,
-    /// Completed months (`YYYY-MM`, from `first_titled_month` on) this player won.
-    pub won_months: Vec<String>,
+    /// Months the player has won to date, whichever month is being shown.
+    pub stars: i32,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct LeaderboardResponse {
     /// The ranked month, `YYYY-MM`.
     pub month: String,
+    /// True for a month that is over: its ranking is final and later catch-ups on its
+    /// grids no longer count.
+    pub is_final: bool,
     pub entries: Vec<LeaderboardEntry>,
 }
 
@@ -63,99 +65,29 @@ pub async fn get_leaderboard(
             .map_err(|_| AppError::BadRequest("Mois invalide, format attendu : AAAA-MM.".into()))?,
         None => today,
     };
-    let (month_first, month_last) = domain::month_bounds(month_day);
+    let (month, _) = domain::month_bounds(month_day);
+    let is_final = month < domain::month_bounds(today).0;
 
-    // Days before the competition's official start were warm-up/training and never count.
-    let from = month_first.max(domain::leaderboard_start_date());
-    let to = month_last.min(today);
-    let rows = if from <= to {
-        repository::list_scored_attempts_between(&state.db, from, to).await?
-    } else {
-        Vec::new()
-    };
+    // A month that is over is served from its frozen ranking. Until the nightly task has
+    // frozen it, it is computed the same way the task would.
+    let mut ranking = if is_final { repository::month_ranking(&state.db, month).await? } else { Vec::new() };
+    if ranking.is_empty() {
+        ranking = service::compute_month_ranking(&state, month, today).await?;
+    }
 
-    let wins = monthly_wins(&state, today).await?;
-    let entries = rank(rows)
+    let stars: HashMap<i32, i64> = repository::star_counts(&state.db).await?.into_iter().collect();
+    let entries = ranking
         .into_iter()
-        .map(|t| LeaderboardEntry {
-            won_months: wins.get(&t.user_id).cloned().unwrap_or_default(),
-            avg_guesses: t.avg_guesses(),
-            user_id: t.user_id,
-            last_initial: domain::last_initial(&t.last_name),
-            first_name: t.first_name,
-            points: t.points,
-            games_played: t.games_played,
+        .map(|e| LeaderboardEntry {
+            last_initial: domain::last_initial(&e.last_name),
+            user_id: e.user_id,
+            first_name: e.first_name,
+            points: e.points,
+            games_played: e.games_played,
+            avg_guesses: e.avg_guesses,
+            stars: stars.get(&e.user_id).copied().unwrap_or(0) as i32,
         })
         .collect();
 
-    Ok(Json(LeaderboardResponse { month: month_first.format("%Y-%m").to_string(), entries }))
-}
-
-struct Totals {
-    user_id: i32,
-    first_name: String,
-    last_name: String,
-    points: f64,
-    games_played: i32,
-    score_sum: i32,
-}
-
-impl Totals {
-    fn avg_guesses(&self) -> f64 {
-        self.score_sum as f64 / self.games_played as f64
-    }
-}
-
-/// Sums each player's points over `rows`, best first: most points, then the lowest
-/// average number of guesses.
-fn rank(rows: Vec<repository::ScoreRow>) -> Vec<Totals> {
-    let mut totals: HashMap<i32, Totals> = HashMap::new();
-    for row in rows {
-        let days_late = domain::days_late(row.game_date, row.updated_at);
-        let fast = domain::is_fast_finish(row.started_at, row.updated_at, row.score);
-        let points = domain::leaderboard_points(row.par, row.score, row.is_first, fast, days_late);
-        let entry = totals.entry(row.user_id).or_insert_with(|| Totals {
-            user_id: row.user_id,
-            first_name: row.first_name,
-            last_name: row.last_name,
-            points: 0.0,
-            games_played: 0,
-            score_sum: 0,
-        });
-        entry.points += points;
-        entry.games_played += 1;
-        entry.score_sum += row.score;
-    }
-
-    let mut ranked: Vec<Totals> = totals.into_values().collect();
-    ranked.sort_by(|a, b| {
-        b.points
-            .partial_cmp(&a.points)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| a.avg_guesses().partial_cmp(&b.avg_guesses()).unwrap_or(Ordering::Equal))
-    });
-    ranked
-}
-
-/// The winner of every completed month since `first_titled_month`, as a map from user
-/// to the months they won.
-async fn monthly_wins(state: &SutomState, today: NaiveDate) -> Result<HashMap<i32, Vec<String>>, AppError> {
-    let (current_month_first, _) = domain::month_bounds(today);
-    let first = domain::first_titled_month();
-    let mut wins: HashMap<i32, Vec<String>> = HashMap::new();
-    if first >= current_month_first {
-        return Ok(wins);
-    }
-    let last = current_month_first.pred_opt().expect("day before a month start exists");
-
-    let mut by_month: BTreeMap<(i32, u32), Vec<repository::ScoreRow>> = BTreeMap::new();
-    for row in repository::list_scored_attempts_between(&state.db, first, last).await? {
-        by_month.entry((row.game_date.year(), row.game_date.month())).or_default().push(row);
-    }
-    for ((year, month), rows) in by_month {
-        if let Some(winner) = rank(rows).into_iter().next() {
-            wins.entry(winner.user_id).or_default().push(format!("{year:04}-{month:02}"));
-        }
-    }
-    Ok(wins)
+    Ok(Json(LeaderboardResponse { month: month.format("%Y-%m").to_string(), is_final, entries }))
 }

@@ -333,11 +333,8 @@ function LeaderboardPanel({ leaderboard }: { leaderboard: Leaderboard | null }) 
             <td className="text-base-content/40">{i + 1}</td>
             <td>
               {displayName(e.first_name, e.last_initial)}
-              {e.won_months.length > 0 && (
-                <span title={`Vainqueur : ${e.won_months.map(monthLabel).join(', ')}`}>
-                  {' '}
-                  {winStars(e.won_months.length)}
-                </span>
+              {e.stars > 0 && (
+                <span title={`${e.stars} mois remporté${e.stars > 1 ? 's' : ''}`}> {winStars(e.stars)}</span>
               )}
             </td>
             <td className="text-right text-base-content/50">{e.avg_guesses.toFixed(2)}</td>
@@ -436,7 +433,11 @@ function PointsInfoModal() {
                 🐦 Birdie : trouvé en <strong>par</strong> − 1 tentatives
               </li>
             </ul>
-            <p>Le classement est mensuel, il est réinitialisé le 1er de chaque mois. </p>
+            <p>
+              Le classement est mensuel, il est réinitialisé le 1er de chaque mois. À la fin du mois, il est figé : une
+              grille du mois rattrapée après sa fin rapporte toujours ses points du jour, mais ne compte plus dans le
+              classement du mois.
+            </p>
             <p>Celui qui termine le premier du mois obtient une ⭐ à côté de son nom et 💫 toutes les 5 étoiles.</p>
           </div>
         </div>
@@ -936,6 +937,14 @@ export function Sutom() {
                   >
                     <OutlineIcon path={CHEVRON_RIGHT} size="w-3 h-3" />
                   </button>
+                  {leaderboard?.is_final && leaderboard.month === shownMonth && (
+                    <span
+                      className="text-base-content/40 font-normal"
+                      title="Mois terminé : les rattrapages joués depuis ne comptent plus"
+                    >
+                      (définitif)
+                    </span>
+                  )}
                 </h3>
                 <PointsInfoModal />
               </div>

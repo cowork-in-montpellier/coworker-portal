@@ -44,12 +44,13 @@ const LeaderboardEntrySchema = z.object({
   points: z.number(),
   games_played: z.number(),
   avg_guesses: z.number(),
-  won_months: z.array(z.string()),
+  stars: z.number(),
 })
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>
 
 const LeaderboardSchema = z.object({
   month: z.string(),
+  is_final: z.boolean(),
   entries: z.array(LeaderboardEntrySchema),
 })
 export type Leaderboard = z.infer<typeof LeaderboardSchema>

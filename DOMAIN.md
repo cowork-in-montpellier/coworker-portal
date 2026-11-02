@@ -841,14 +841,21 @@ score 4 first + next day → 2.625.
 #### Monthly ranking
 Players are ranked over one calendar month by total points, then by the lowest average
 `score` over the days they finished (days not played don't count; a failure counts as 7).
+Only games on that month's grids **finished before the month ended** (midnight, Paris
+time, on the 1st of the next month) count: a later catch-up still earns its day's points
+on the scoreboard, but never counts toward any month's ranking.
 Days before the competition start (2026-09-23) never count. Days whose par isn't frozen
-yet (e.g. today) use the effective par. Every completed month from October 2026 on has a
-winner: the top of that month's ranking.
+yet (e.g. today) use the effective par. Ties left after the average go to the player
+with more games played, then to the lower user id, so the order is always the same.
 
-#### Result visibility
-On a day's scoreboard, a finished player's score and points are shown to everyone. Their
-letter sequence is shown to the caller only when the player is the caller or the caller
-has finished the day too. This way nobody sees letter feedback before playing.
+#### Month freeze
+Once a month from October 2026 on is over, its whole ranking is frozen once in
+`portal_sutom_month_ranking` by the nightly task (and at startup, for any month still
+missing). Its first line is the month's winner, who earns a ⭐. A month nobody played
+has nothing to freeze.
+
+A player's **stars** belong to the player, not to a month: they are the number of frozen
+months the player won, so any ranking (past or current) shows the stars held today.
 
 ### Postgres
 
@@ -879,6 +886,18 @@ This app owns the schema and data for:
 | `updated_at` | TIMESTAMPTZ | default `now()`, refreshed on each submission |
 
 Constraint: `UNIQUE (user_id, game_date)`.
+
+**`portal_sutom_month_ranking`**
+| Column | Type | Notes |
+|--------|------|-------|
+| `month` | DATE | first day of the month |
+| `user_id` | INT | FK → `auth_user.id`, cascade delete |
+| `rank` | INT | 1 = winner of the month |
+| `points` | DOUBLE PRECISION | |
+| `games_played` | INT | |
+| `avg_guesses` | DOUBLE PRECISION | |
+
+Primary key: `(month, user_id)`.
 
 ### Edges
 
@@ -950,8 +969,10 @@ letter feedback locally, so this is a trust-based game.
 
 #### Leaderboard
 - `GET /sutom/leaderboard?month=YYYY-MM` — the [monthly ranking](#monthly-ranking) for
-  that month (default: the current one), up to today. Each entry has `points`,
-  `games_played`, `avg_guesses` and `won_months`, the completed months that player won.
+  that month (default: the current one). A month that is over (`is_final`) is served
+  from its [frozen ranking](#month-freeze); the current one is computed on each call.
+  Each entry has `points`, `games_played`, `avg_guesses` and `stars` (months won to
+  date).
 
 #### History
 - `GET /sutom/history` — every stored day in the window (most recent first), with its
@@ -960,7 +981,8 @@ letter feedback locally, so this is a trust-based game.
 #### Nightly refresh
 Background task, run in Europe/Paris time:
 1. Freeze yesterday's par (no-op if already set or nobody finished).
-2. Warm today's word with `ensure_daily_word(today)`, then its dictionary in the cache.
+2. Freeze the ranking of every completed month not frozen yet (also run once at startup).
+3. Warm today's word with `ensure_daily_word(today)`, then its dictionary in the cache.
 
 Failures are logged and do not stop the scheduler. The cron expression is validated at
 startup, and an invalid one stops the server from starting.
