@@ -7,9 +7,15 @@ pub struct Claims {
     pub sub: i32,
     pub username: String,
     pub first_name: String,
+    /// Tokens issued before refresh tokens existed carry no type: they were access tokens.
+    #[serde(default = "access_token_type")]
     pub token_type: String,
     pub exp: u64,
     pub iat: u64,
+}
+
+fn access_token_type() -> String {
+    "access".to_string()
 }
 
 pub struct JwtService {
@@ -68,5 +74,28 @@ impl JwtService {
     pub fn verify(&self, token: &str) -> Result<Claims> {
         let data = decode::<Claims>(token, &self.decoding_key, &Validation::default())?;
         Ok(data.claims)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_issued_before_token_type_is_an_access_token() {
+        #[derive(Serialize)]
+        struct LegacyClaims {
+            sub: i32,
+            username: String,
+            first_name: String,
+            exp: u64,
+            iat: u64,
+        }
+        let now = jsonwebtoken::get_current_timestamp();
+        let legacy = LegacyClaims { sub: 1, username: "alice".into(), first_name: "Alice".into(), exp: now + 3600, iat: now };
+        let token = encode(&Header::default(), &legacy, &EncodingKey::from_secret(b"secret")).unwrap();
+
+        let claims = JwtService::new("secret", 1, 1, 1).verify(&token).unwrap();
+        assert_eq!(claims.token_type, "access");
     }
 }

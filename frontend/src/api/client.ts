@@ -57,6 +57,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       }
       return retry.json() as Promise<T>
     }
+    // Drop the rejected token, or /login sees it as still valid and sends us back here.
+    clearTokens()
     window.location.href = '/login'
     throw new ApiError(401, 'Unauthorized')
   }
