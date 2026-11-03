@@ -10,11 +10,14 @@ use crate::users::state::State as UsersState;
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+    #[serde(default)]
+    pub remember_me: bool,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct LoginResponse {
     pub token: String,
+    pub refresh_token: String,
 }
 
 #[derive(FromRow)]
@@ -59,5 +62,12 @@ pub async fn login(
         .generate(user.id, &user.username, &user.first_name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok(Json(LoginResponse { token }))
+    let refresh_token = if body.remember_me {
+        state.jwt.generate_remember_me_refresh(user.id, &user.username, &user.first_name)
+    } else {
+        state.jwt.generate_refresh(user.id, &user.username, &user.first_name)
+    }
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(Json(LoginResponse { token, refresh_token }))
 }

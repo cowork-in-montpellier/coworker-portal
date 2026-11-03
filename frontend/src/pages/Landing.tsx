@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import { Navbar } from '../components/Navbar'
+import { storeTokens } from '../auth'
 
 const loginSchema = z.object({
   username: z.string().min(1, "Nom d'utilisateur requis"),
@@ -14,6 +15,7 @@ type FieldErrors = Partial<Record<keyof LoginForm, string>>
 export function Landing() {
   const navigate = useNavigate()
   const [form, setForm] = useState<LoginForm>({ username: '', password: '' })
+  const [rememberMe, setRememberMe] = useState(false)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [apiError, setApiError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -40,7 +42,7 @@ export function Landing() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(result.data),
+        body: JSON.stringify({ ...result.data, remember_me: rememberMe }),
       })
 
       if (res.status === 401) {
@@ -52,8 +54,8 @@ export function Landing() {
         return
       }
 
-      const { token } = await res.json()
-      localStorage.setItem('token', token)
+      const { token, refresh_token } = await res.json()
+      storeTokens(token, refresh_token)
       navigate('/dashboard')
     } catch {
       setApiError('Impossible de contacter le serveur. Veuillez réessayer.')
@@ -133,6 +135,16 @@ export function Landing() {
                   </label>
                 )}
               </div>
+
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm"
+                  checked={rememberMe}
+                  onChange={e => setRememberMe(e.target.checked)}
+                />
+                <span className="text-sm">Se souvenir de moi</span>
+              </label>
 
               <div className="card-actions justify-between items-center mt-1">
                 <Link to="/forgot-password" className="text-xs text-base-content/50 hover:text-base-content">

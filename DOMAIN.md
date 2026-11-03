@@ -60,8 +60,9 @@ to authenticate requests:
   `invoice::State` and `calendar::State`, each holding an `Arc<JwtService>` constructed
   once in `main.rs` and cloned into every module state.
 - **`CurrentUser`** — `FromRequestParts` extractor, generic over any `S: HasJwt + Send + Sync`.
-  Verifies the `Authorization: Bearer <jwt>` header and yields `{ id, first_name }`. Used
-  by `invoice` (bills, vouchers, services routes) and `calendar` (booking creation/deletion).
+  Verifies the `Authorization: Bearer <jwt>` header, checks that `token_type = "access"`
+  (refresh tokens are rejected), and yields `{ id, first_name }`. Used by `invoice` (bills,
+  vouchers, services routes) and `calendar` (booking creation/deletion).
 
 ### Ports implemented for other modules
 
@@ -119,8 +120,45 @@ This app owns the schema and data for:
 As a coworker I want to connect to this application.
 
 Acceptance criteria :
- - User can connect with a user / password
- - Logged user have a token that provide authentication for all other features
+ - User can connect with a username / password (or email / password)
+ - Login returns two tokens: an **access token** and a **refresh token**, both stateless JWTs signed with `JWT_SECRET`, distinguished by a `token_type` claim (`"access"` or `"refresh"`)
+ - The access token is used for all authenticated API calls (48h default TTL)
+ - The refresh token is used exclusively to renew the session (48h default TTL, or 45 days if `remember_me` is true)
+ - Login accepts an optional `remember_me: bool` field (default false); when true, the refresh token is issued with a longer TTL configured by `JWT_REMEMBER_ME_HOURS`
+
+**Token claims** (`Claims`):
+
+| Claim | Type | Description |
+|-------|------|-------------|
+| `sub` | int | user id (`auth_user.id`) |
+| `username` | string | Django username |
+| `first_name` | string | display name |
+| `token_type` | string | `"access"` or `"refresh"` |
+| `iat` | u64 | issued-at timestamp |
+| `exp` | u64 | expiry timestamp |
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_SECRET` | _(required)_ | Signing secret for all JWTs; rotating it invalidates all active sessions |
+| `JWT_EXPIRY_HOURS` | `48` | Access token TTL in hours |
+| `JWT_REFRESH_EXPIRY_HOURS` | `48` | Refresh token TTL in hours |
+| `JWT_REMEMBER_ME_HOURS` | `1080` | Refresh token TTL when `remember_me = true` (1080h = 45 days) |
+
+#### Token renewal
+A user whose access token has expired can silently renew their session without re-entering credentials, as long as their refresh token is still valid.
+
+**Flow:**
+1. Client sends `POST /api/auth/renew` with `{ refresh_token }`
+2. Backend verifies the JWT signature and expiry
+3. Backend checks `token_type = "refresh"` — returns 401 if an access token is submitted
+4. Backend loads the user from `auth_user` — returns 401 if the user is inactive
+5. Backend cross-checks `claims.username == user.username` — returns 401 on mismatch (defense in depth against crafted tokens)
+6. Backend issues a new access token and a new refresh token
+7. Response: `{ token, refresh_token }`
+
+Rotating `JWT_SECRET` immediately invalidates all access and refresh tokens, forcing all users to re-login.
 
 #### Password reset
 A user who forgot their password can request a reset link by email and set a new password.
