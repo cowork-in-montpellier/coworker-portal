@@ -2,6 +2,7 @@ pub mod invite;
 pub mod login;
 pub mod password_reset;
 pub mod profile;
+pub mod renew;
 
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -11,6 +12,7 @@ use crate::users::state::State;
 pub fn auth_router() -> OpenApiRouter<State> {
     OpenApiRouter::new()
         .routes(routes!(login::login))
+        .routes(routes!(renew::renew))
         .routes(routes!(password_reset::forgot_password))
         .routes(routes!(password_reset::reset_password))
         .routes(routes!(invite::accept_invite))

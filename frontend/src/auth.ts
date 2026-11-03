@@ -2,6 +2,7 @@ interface TokenPayload {
   sub: number
   username: string
   first_name: string
+  token_type: string
   exp: number
   iat: number
 }
@@ -30,6 +31,26 @@ export function isAuthenticated(): boolean {
   return payload.exp * 1000 > Date.now()
 }
 
-export function logout() {
+export function isTokenExpired(): boolean {
+  const payload = getTokenPayload()
+  if (!payload) return false
+  return payload.exp * 1000 <= Date.now()
+}
+
+export function getRefreshToken(): string | null {
+  return localStorage.getItem('refresh_token')
+}
+
+export function storeTokens(token: string, refreshToken: string): void {
+  localStorage.setItem('token', token)
+  localStorage.setItem('refresh_token', refreshToken)
+}
+
+export function clearTokens(): void {
   localStorage.removeItem('token')
+  localStorage.removeItem('refresh_token')
+}
+
+export function logout(): void {
+  clearTokens()
 }

@@ -37,6 +37,10 @@ where
             .verify(token)
             .map_err(|_| (StatusCode::UNAUTHORIZED, "Invalid or expired token"))?;
 
+        if claims.token_type != "access" {
+            return Err((StatusCode::UNAUTHORIZED, "Invalid token type"));
+        }
+
         Ok(CurrentUser {
             id: claims.sub,
             first_name: claims.first_name,

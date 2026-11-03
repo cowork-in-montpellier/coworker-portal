@@ -6,6 +6,8 @@ use super::email::SmtpConfig;
 pub struct Config {
     pub jwt_secret: String,
     pub jwt_expiry_hours: u64,
+    pub jwt_refresh_expiry_hours: u64,
+    pub jwt_remember_me_hours: u64,
     pub smtp: Option<SmtpConfig>,
     pub app_base_url: String,
 }
@@ -15,9 +17,17 @@ impl Config {
         Ok(Self {
             jwt_secret: std::env::var("JWT_SECRET").context("JWT_SECRET must be set")?,
             jwt_expiry_hours: std::env::var("JWT_EXPIRY_HOURS")
-                .unwrap_or_else(|_| "24".into())
+                .unwrap_or_else(|_| "48".into())
                 .parse()
                 .context("JWT_EXPIRY_HOURS must be a number")?,
+            jwt_refresh_expiry_hours: std::env::var("JWT_REFRESH_EXPIRY_HOURS")
+                .unwrap_or_else(|_| "48".into())
+                .parse()
+                .context("JWT_REFRESH_EXPIRY_HOURS must be a number")?,
+            jwt_remember_me_hours: std::env::var("JWT_REMEMBER_ME_HOURS")
+                .unwrap_or_else(|_| "1080".into())
+                .parse()
+                .context("JWT_REMEMBER_ME_HOURS must be a number")?,
             smtp: match std::env::var("SMTP_HOST") {
                 Ok(host) => Some(SmtpConfig {
                     host,

@@ -47,6 +47,8 @@ async fn main() -> Result<()> {
     let jwt = Arc::new(users::JwtService::new(
         &users_config.jwt_secret,
         users_config.jwt_expiry_hours,
+        users_config.jwt_refresh_expiry_hours,
+        users_config.jwt_remember_me_hours,
     ));
 
     let users_state = users::State {

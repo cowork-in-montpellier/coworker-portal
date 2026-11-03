@@ -1,3 +1,6 @@
+import { getRefreshToken, storeTokens, clearTokens } from '../auth'
+import { renewToken } from './auth'
+
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {
     super(message)
@@ -13,6 +16,19 @@ function authHeaders(): HeadersInit {
   }
 }
 
+async function tryRefresh(): Promise<boolean> {
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) return false
+  try {
+    const pair = await renewToken(refreshToken)
+    storeTokens(pair.token, pair.refresh_token)
+    return true
+  } catch {
+    clearTokens()
+    return false
+  }
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
@@ -20,7 +36,27 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
+    const refreshed = await tryRefresh()
+    if (refreshed) {
+      const retry = await fetch(path, {
+        ...init,
+        headers: { ...authHeaders(), ...(init?.headers ?? {}) },
+      })
+      if (retry.status === 401) {
+        clearTokens()
+        window.location.href = '/login'
+        throw new ApiError(401, 'Unauthorized')
+      }
+      if (!retry.ok) {
+        let message = `API error ${retry.status}`
+        try {
+          const body = await retry.json()
+          if (typeof body?.error === 'string') message = body.error
+        } catch { /* non-JSON body, keep default */ }
+        throw new ApiError(retry.status, message)
+      }
+      return retry.json() as Promise<T>
+    }
     window.location.href = '/login'
     throw new ApiError(401, 'Unauthorized')
   }

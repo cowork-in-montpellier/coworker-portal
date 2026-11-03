@@ -11,3 +11,18 @@ export const resetPassword = (token: string, new_password: string) =>
     method: 'POST',
     body: JSON.stringify({ token, new_password }),
   })
+
+export interface TokenPair {
+  token: string
+  refresh_token: string
+}
+
+export async function renewToken(refreshToken: string): Promise<TokenPair> {
+  const res = await fetch('/api/auth/renew', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  if (!res.ok) throw new Error('Renew failed')
+  return res.json() as Promise<TokenPair>
+}
