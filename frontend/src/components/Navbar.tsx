@@ -21,6 +21,7 @@ export function Navbar() {
 
   const navItems: { to: string, label: string, authOnly?: boolean }[] = [
     { to: '/dashboard', label: 'Factures', authOnly: true },
+    { to: '/cashier', label: 'Caisse', authOnly: true },
     { to: '/calendar', label: 'Calendrier' },
     { to: '/live', label: 'Live' },
     { to: '/sutom', label: 'SUTOM', authOnly: true },

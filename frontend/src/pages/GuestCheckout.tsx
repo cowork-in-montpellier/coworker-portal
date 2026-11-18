@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { type Service } from '../api/services'
-import { createGuestBill, listGuestServices } from '../api/guest'
+import { createGuestOrder, listGuestServices } from '../api/guest'
 import { ApiError } from '../api/client'
 import { fetchOnsitePaymentPresence } from '../api/connected'
 import { useStatus } from '../hooks/useStatus'
@@ -58,7 +58,7 @@ export function GuestCheckout() {
     setSubmitting(true)
     setError(null)
     try {
-      const result = await createGuestBill({
+      const result = await createGuestOrder({
         lines,
         guest_email: guestEmail,
         billing_name: billingName,
@@ -68,14 +68,14 @@ export function GuestCheckout() {
       if (result.payment_url) {
         window.location.href = result.payment_url
       } else {
-        navigate(`/buy/summary/${result.guest_token}`)
+        navigate(`/buy/processing/${result.order_token}`)
       }
     } catch (e) {
       const reason =
         e instanceof ApiError && e.status === 502
-          ? 'Erreur lors de la création des vouchers. Merci de réessayer plus tard ou de contacter #commission-informatique sur Slack.'
+          ? 'Erreur lors de la création de la commande. Merci de réessayer plus tard ou de contacter #commission-informatique sur Slack.'
           : 'Veuillez réessayer.'
-      setError(`Erreur à la création de la facture : ${reason}`)
+      setError(`Erreur à la création de la commande : ${reason}`)
     } finally {
       setSubmitting(false)
     }
