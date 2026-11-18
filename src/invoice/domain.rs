@@ -88,6 +88,17 @@ pub fn next_bill_number(last: Option<&str>, today: NaiveDate) -> String {
     format!("F{}{:03}", today.format("%Y%m"), seq)
 }
 
+/// Compute the next guest pending-order provisional number.
+/// Format: F + YYYYMM + G + NNN (the G discriminant avoids collision with real bill numbers)
+pub fn next_guest_order_number(last: Option<&str>, today: NaiveDate) -> String {
+    let seq = last
+        .and_then(|n| n.get(8..))
+        .and_then(|s| s.parse::<u32>().ok())
+        .map(|n| n + 1)
+        .unwrap_or(1);
+    format!("F{}G{:03}", today.format("%Y%m"), seq)
+}
+
 /// Compute voucher duration in hours for a Monthly service:
 /// hours from now until 23:59:59 on the 30th day from today.
 pub fn monthly_duration_hours(now: DateTime<Utc>) -> i32 {
