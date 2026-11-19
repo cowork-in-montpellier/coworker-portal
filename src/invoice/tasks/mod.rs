@@ -1,3 +1,4 @@
+mod guest_order_cleanup;
 mod monthly_usage;
 mod occupancy;
 mod voucher_sync;
@@ -42,6 +43,13 @@ pub async fn register(scheduler: &JobScheduler, state: State) -> anyhow::Result<
     scheduler.add(Job::new_async_tz(&cron, Paris, move |_id, _sched| {
         let s = s.clone();
         Box::pin(async move { occupancy::run(&s).await })
+    })?).await?;
+
+    // Guest order cleanup: daily at 03:00 (Paris) — removes orders older than 3 months.
+    let s = state.clone();
+    scheduler.add(Job::new_async_tz("0 3 * * *", Paris, move |_id, _sched| {
+        let s = s.clone();
+        Box::pin(async move { guest_order_cleanup::run(&s).await })
     })?).await?;
 
     tracing::info!(

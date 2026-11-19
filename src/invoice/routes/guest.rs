@@ -1014,12 +1014,6 @@ async fn create_bill_for_order(
         });
     }
 
-    // Delete the pending order now that the real bill exists
-    sqlx::query("DELETE FROM portal_guest_pending_order WHERE order_token = $1")
-        .bind(order_token)
-        .execute(&mut *tx)
-        .await?;
-
     tx.commit().await?;
 
     // Send confirmation email (non-blocking — failure does not fail the caller)
