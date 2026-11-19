@@ -14,7 +14,7 @@ use crate::error::AppError;
 use crate::invoice::django_pdf::proxy_bill_pdf;
 use crate::users::auth::CurrentUser;
 use crate::invoice::domain::{
-    PaymentMethod, Service, VoucherStatus, format_code, next_bill_number,
+    PaymentMethod, Service, VoucherStatus, format_code,
     next_guest_order_number, resolve_voucher_params,
 };
 use crate::invoice::repository;
@@ -881,14 +881,10 @@ async fn create_bill_for_order(
 
     let now = Utc::now();
 
-    // Begin transaction with bill-creation lock (serializes all bill number generation)
+    // Begin transaction
     let mut tx = state.db.begin().await?;
 
-    sqlx::query("SELECT pg_advisory_xact_lock(42)")
-        .execute(&mut *tx)
-        .await?;
-
-    // Re-check inside lock: another thread may have committed while we waited
+    // Re-check inside tx: another thread may have committed while we were loading
     let existing: Option<Uuid> = sqlx::query_scalar(
         "SELECT guest_token FROM portal_guest_pending_order WHERE order_token = $1",
     )
@@ -917,12 +913,9 @@ async fn create_bill_for_order(
         return Ok(None);
     }
 
-    // Compute next bill number
-    let last_number: Option<String> =
-        sqlx::query_scalar("SELECT number FROM billjobs_bill ORDER BY id DESC LIMIT 1")
-            .fetch_optional(&mut *tx)
-            .await?;
-    let number = next_bill_number(last_number.as_deref(), now.date_naive());
+    // Use the provisional number as the final bill number — the G discriminant avoids
+    // any collision with regular member bill numbers (F{YYYYMM}{NNN}).
+    let number = order.provisional_number.clone();
 
     tracing::info!(
         %order_token,
@@ -1020,6 +1013,12 @@ async fn create_bill_for_order(
             vouchers: line_vouchers,
         });
     }
+
+    // Delete the pending order now that the real bill exists
+    sqlx::query("DELETE FROM portal_guest_pending_order WHERE order_token = $1")
+        .bind(order_token)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
 

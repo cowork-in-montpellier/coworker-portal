@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { getTokenPayload, isAuthenticated, logout } from '../auth'
+import { getRefreshToken, getTokenPayload, isAuthenticated, logout } from '../auth'
 import { type ThemeId, getTheme, setTheme } from '../lib/theme'
 
 export function Navbar() {
   const user = getTokenPayload()
-  const authenticated = isAuthenticated()
+  const authenticated = isAuthenticated() || getRefreshToken() !== null
   const [theme, setThemeState] = useState<ThemeId>(getTheme)
   const location = useLocation()
 
