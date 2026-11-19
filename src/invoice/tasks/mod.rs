@@ -13,6 +13,7 @@ pub async fn register(scheduler: &JobScheduler, state: State) -> anyhow::Result<
     let voucher_sync_cron = state.config.voucher_sync_cron.clone();
     let monthly_usage_cron = state.config.monthly_usage_cron.clone();
     let occupancy_cron = state.config.occupancy_cron.clone();
+    let guest_order_cleanup_cron = state.config.guest_order_cleanup_cron.clone();
 
     voucher_sync_cron.parse::<croner::Cron>()
         .map_err(|e| anyhow::anyhow!("Invalid VOUCHER_SYNC_CRON {:?}: {}", voucher_sync_cron, e))?;
@@ -20,6 +21,8 @@ pub async fn register(scheduler: &JobScheduler, state: State) -> anyhow::Result<
         .map_err(|e| anyhow::anyhow!("Invalid MONTHLY_USAGE_CRON {:?}: {}", monthly_usage_cron, e))?;
     occupancy_cron.parse::<croner::Cron>()
         .map_err(|e| anyhow::anyhow!("Invalid OCCUPANCY_CRON {:?}: {}", occupancy_cron, e))?;
+    guest_order_cleanup_cron.parse::<croner::Cron>()
+        .map_err(|e| anyhow::anyhow!("Invalid GUEST_ORDER_CLEANUP_CRON {:?}: {}", guest_order_cleanup_cron, e))?;
 
     // Voucher sync: Mon–Fri, every hour 09:00–19:00 (Paris).
     let s = state.clone();
@@ -45,9 +48,10 @@ pub async fn register(scheduler: &JobScheduler, state: State) -> anyhow::Result<
         Box::pin(async move { occupancy::run(&s).await })
     })?).await?;
 
-    // Guest order cleanup: daily at 03:00 (Paris) — removes orders older than 3 months.
+    // Guest order cleanup: daily at 03:00 by default (Paris) — removes orders older than 3 months.
     let s = state.clone();
-    scheduler.add(Job::new_async_tz("0 3 * * *", Paris, move |_id, _sched| {
+    let cron = guest_order_cleanup_cron.clone();
+    scheduler.add(Job::new_async_tz(&cron, Paris, move |_id, _sched| {
         let s = s.clone();
         Box::pin(async move { guest_order_cleanup::run(&s).await })
     })?).await?;
@@ -56,6 +60,7 @@ pub async fn register(scheduler: &JobScheduler, state: State) -> anyhow::Result<
         voucher_sync_cron,
         monthly_usage_cron,
         occupancy_cron,
+        guest_order_cleanup_cron,
         timezone = "Europe/Paris",
         "Invoice scheduler tasks registered"
     );
