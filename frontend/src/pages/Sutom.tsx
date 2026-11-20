@@ -1,6 +1,6 @@
 import { addDays, addMonths, format } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   fetchDay,
   fetchHistory,
@@ -224,6 +224,10 @@ function basePoints(par: number, score: number): number {
   return 3 + (par - score) / (score > par ? 2 : 1)
 }
 
+function possibleLabel(count: number): string {
+  return `${count.toLocaleString('fr-FR')} mot${count > 1 ? 's' : ''} possible${count > 1 ? 's' : ''}`
+}
+
 function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; par: number | null }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
 
@@ -276,14 +280,23 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
             </button>
             {expanded.has(p.user_id) && p.sequence && (
               <div className="px-3 py-2 flex items-start justify-between gap-3">
-                <div className="flex flex-col gap-0.5">
-                  {p.sequence.map((row, rowIdx) => (
-                    <div key={rowIdx} className="flex gap-0.5">
-                      {row.map((status, j) => (
-                        <div key={j} className={`w-4 h-4 rounded-sm ${miniCellClass(status)}`} />
-                      ))}
-                    </div>
-                  ))}
+                {/* Two columns so every count lines up right against its row, whatever its width. */}
+                <div className="grid grid-cols-[auto_auto] items-center gap-x-1 gap-y-0.5">
+                  {p.sequence.map((row, rowIdx) => {
+                    const possible = p.possible_counts?.[rowIdx]
+                    return (
+                      <Fragment key={rowIdx}>
+                        <span className="text-[11px] text-base-content/50 tabular-nums text-right whitespace-nowrap">
+                          {possible != null && `${possibleLabel(possible)} ►`}
+                        </span>
+                        <div className="flex gap-0.5">
+                          {row.map((status, j) => (
+                            <div key={j} className={`w-4 h-4 rounded-sm ${miniCellClass(status)}`} />
+                          ))}
+                        </div>
+                      </Fragment>
+                    )
+                  })}
                 </div>
                 {par != null && p.score != null && p.points != null && (
                   <ul className="text-[11px] text-base-content/50 leading-tight pl-3">
@@ -332,7 +345,16 @@ function LeaderboardPanel({ leaderboard }: { leaderboard: Leaderboard | null }) 
           <tr key={e.user_id}>
             <td className="text-base-content/40">{i + 1}</td>
             <td>
-              {displayName(e.first_name, e.last_initial)}
+              <span
+                className={e.up_to_date ? 'font-semibold' : undefined}
+                title={
+                  e.up_to_date
+                    ? `À jour : a terminé les ${leaderboard.grids} grilles du mois${leaderboard.is_final ? '' : ", aujourd'hui compris"}`
+                    : `Pas à jour : a terminé ${e.games_played} grille${e.games_played > 1 ? 's' : ''} sur ${leaderboard.grids}`
+                }
+              >
+                {displayName(e.first_name, e.last_initial)}
+              </span>
               {e.stars > 0 && (
                 <span title={`${e.stars} mois remporté${e.stars > 1 ? 's' : ''}`}> {winStars(e.stars)}</span>
               )}

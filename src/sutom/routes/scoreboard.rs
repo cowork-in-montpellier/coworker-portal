@@ -24,6 +24,8 @@ pub struct ScoreboardPlayer {
     pub revealed: bool,
     pub score: Option<i32>,
     pub sequence: Option<Vec<Vec<domain::LetterStatus>>>,
+    /// How many dictionary words were still possible when each guess was made, alongside `sequence`.
+    pub possible_counts: Option<Vec<i32>>,
     /// True for whoever finished this day's puzzle earliest, win or lose.
     pub first_to_finish: bool,
     /// True if the word was found less than a minute after the first guess.
@@ -66,7 +68,8 @@ pub async fn get_scoreboard(
     let daily = service::ensure_daily_word(&state, date)
         .await
         .map_err(|e| AppError::External(e.to_string()))?;
-    let attempts = repository::list_attempts_for_date(&state.db, date).await?;
+    let mut attempts = repository::list_attempts_for_date(&state.db, date).await?;
+    backfill_possible_counts(&state, date, &daily.word, &mut attempts).await?;
     let par = service::effective_par(&state, date, daily.par).await?;
 
     let viewer_finished = attempts.iter().any(|a| a.user_id == user.id && a.score.is_some());
@@ -110,6 +113,7 @@ pub async fn get_scoreboard(
             let revealed = finished && (a.user_id == user.id || viewer_finished);
             let sequence = revealed
                 .then(|| a.guesses.iter().map(|g| domain::score_guess(&daily.word, g)).collect());
+            let possible_counts = if revealed { a.possible_counts } else { None };
 
             ScoreboardPlayer {
                 user_id: a.user_id,
@@ -119,6 +123,7 @@ pub async fn get_scoreboard(
                 revealed,
                 score: a.score,
                 sequence,
+                possible_counts,
                 first_to_finish: is_first,
                 fast,
                 days_late,
@@ -128,4 +133,31 @@ pub async fn get_scoreboard(
         .collect();
 
     Ok(Json(ScoreboardResponse { date, players }))
+}
+
+/// Computes and stores the possible-words counts of games finished before they were
+/// recorded at the end of each game, so each one is only ever computed once. Left empty
+/// if the dictionary can't be fetched right now: it'll be tried again next time.
+async fn backfill_possible_counts(
+    state: &SutomState,
+    date: NaiveDate,
+    word: &str,
+    attempts: &mut [repository::PlayerAttempt],
+) -> Result<(), AppError> {
+    if !attempts.iter().any(|a| a.score.is_some() && a.possible_counts.is_none()) {
+        return Ok(());
+    }
+    let dictionary = match service::possible_words(state, word).await {
+        Ok(dictionary) => dictionary,
+        Err(e) => {
+            tracing::warn!(error = %e, %date, "Sutom: dictionary unavailable, possible words not computed");
+            return Ok(());
+        }
+    };
+    for a in attempts.iter_mut().filter(|a| a.score.is_some() && a.possible_counts.is_none()) {
+        let counts = domain::possible_counts(word, &dictionary, &a.guesses);
+        repository::set_possible_counts(&state.db, a.user_id, date, &counts).await?;
+        a.possible_counts = Some(counts);
+    }
+    Ok(())
 }

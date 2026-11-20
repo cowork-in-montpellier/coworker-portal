@@ -117,6 +117,16 @@ pub fn rank(rows: Vec<repository::ScoreRow>) -> Vec<Totals> {
     ranked
 }
 
+/// The first and last grid of `month` that count toward its ranking, up to `today` for
+/// the current month, or `None` if none does yet.
+pub fn counted_days(month: NaiveDate, today: NaiveDate) -> Option<(NaiveDate, NaiveDate)> {
+    let (first, last) = domain::month_bounds(month);
+    // Days before the competition's official start were warm-up/training and never count.
+    let from = first.max(domain::leaderboard_start_date());
+    let to = last.min(today);
+    (from <= to).then_some((from, to))
+}
+
 /// A month's ranking computed from the attempts: games on that month's grids finished
 /// before the month ended (and before `today`, for the current month), best first.
 pub async fn compute_month_ranking(
@@ -124,13 +134,10 @@ pub async fn compute_month_ranking(
     month: NaiveDate,
     today: NaiveDate,
 ) -> Result<Vec<repository::MonthRankingEntry>, sqlx::Error> {
-    let (first, last) = domain::month_bounds(month);
-    // Days before the competition's official start were warm-up/training and never count.
-    let from = first.max(domain::leaderboard_start_date());
-    let to = last.min(today);
-    if from > to {
+    let Some((from, to)) = counted_days(month, today) else {
         return Ok(Vec::new());
-    }
+    };
+    let (first, _) = domain::month_bounds(month);
 
     let rows = repository::list_scored_attempts_between(&state.db, from, to, domain::month_end(first)).await?;
 
