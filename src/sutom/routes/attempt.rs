@@ -64,7 +64,9 @@ pub async fn submit_guesses(
     }
 
     let score = domain::score_for(&daily.word, &cleaned);
-    repository::upsert_attempt(&state.db, user.id, date, &cleaned, score).await?;
+    // Computed once, when the game ends, for the scoreboard's detail view.
+    let possible = score.map(|_| domain::possible_counts(&daily.word, &possible_words, &cleaned));
+    repository::upsert_attempt(&state.db, user.id, date, &cleaned, score, possible.as_deref()).await?;
 
     Ok(Json(SubmitGuessesResponse { score }))
 }

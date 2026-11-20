@@ -150,6 +150,22 @@ pub fn validate_guess(target: &str, possible_words: &[String], guess: &str) -> R
     Ok(())
 }
 
+/// How many dictionary words were still possible when each guess was made: the whole
+/// dictionary for the first one, then those that would have given the same feedback as
+/// the target on every earlier guess (the target included).
+pub fn possible_counts(target: &str, dictionary: &[String], guesses: &[String]) -> Vec<i32> {
+    let mut candidates: Vec<&String> = dictionary.iter().collect();
+    guesses
+        .iter()
+        .map(|guess| {
+            let before = candidates.len() as i32;
+            let feedback = score_guess(target, guess);
+            candidates.retain(|w| score_guess(w, guess) == feedback);
+            before
+        })
+        .collect()
+}
+
 /// Under this time between the first guess and solving it, a game earns the speed bonus.
 pub const FAST_FINISH_SECS: i64 = 60;
 
@@ -227,6 +243,14 @@ mod tests {
                 LetterStatus::Absent,
             ]
         );
+    }
+
+    #[test]
+    fn possible_counts_narrows_down_before_each_guess() {
+        let dictionary: Vec<String> = ["BALLE", "BELLE", "BILLE", "BULLE", "BARRE"].map(String::from).into();
+        let guesses: Vec<String> = ["BARRE", "BELLE", "BILLE"].map(String::from).into();
+        // All 5 at first; BARRE rules out BALLE and itself; BELLE leaves BILLE and BULLE.
+        assert_eq!(possible_counts("BILLE", &dictionary, &guesses), vec![5, 3, 2]);
     }
 
     #[test]

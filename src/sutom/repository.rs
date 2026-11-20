@@ -127,19 +127,38 @@ pub async fn upsert_attempt(
     date: NaiveDate,
     guesses: &[String],
     score: Option<i32>,
+    possible_counts: Option<&[i32]>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO portal_sutom_attempt (user_id, game_date, guesses, score, started_at, updated_at)
-         VALUES ($1, $2, $3, $4, now(), now())
+        "INSERT INTO portal_sutom_attempt (user_id, game_date, guesses, score, possible_counts, started_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, now(), now())
          ON CONFLICT (user_id, game_date)
-         DO UPDATE SET guesses = EXCLUDED.guesses, score = EXCLUDED.score, updated_at = now()",
+         DO UPDATE SET guesses = EXCLUDED.guesses, score = EXCLUDED.score,
+                       possible_counts = EXCLUDED.possible_counts, updated_at = now()",
     )
     .bind(user_id)
     .bind(date)
     .bind(guesses)
     .bind(score)
+    .bind(possible_counts)
     .execute(db)
     .await?;
+    Ok(())
+}
+
+/// Stores the possible-words counts of a game finished before they were recorded.
+pub async fn set_possible_counts(
+    db: &PgPool,
+    user_id: i32,
+    date: NaiveDate,
+    possible_counts: &[i32],
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE portal_sutom_attempt SET possible_counts = $3 WHERE user_id = $1 AND game_date = $2")
+        .bind(user_id)
+        .bind(date)
+        .bind(possible_counts)
+        .execute(db)
+        .await?;
     Ok(())
 }
 
@@ -149,6 +168,8 @@ pub struct PlayerAttempt {
     pub last_name: String,
     pub guesses: Vec<String>,
     pub score: Option<i32>,
+    /// Possible words when each guess was made, once the game is finished.
+    pub possible_counts: Option<Vec<i32>>,
     pub started_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -165,12 +186,13 @@ pub async fn list_attempts_for_date(
         last_name: String,
         guesses: Vec<String>,
         score: Option<i32>,
+        possible_counts: Option<Vec<i32>>,
         started_at: Option<chrono::DateTime<chrono::Utc>>,
         updated_at: chrono::DateTime<chrono::Utc>,
     }
 
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT a.user_id, u.first_name, u.last_name, a.guesses, a.score, a.started_at, a.updated_at
+        "SELECT a.user_id, u.first_name, u.last_name, a.guesses, a.score, a.possible_counts, a.started_at, a.updated_at
          FROM portal_sutom_attempt a
          JOIN auth_user u ON u.id = a.user_id
          WHERE a.game_date = $1",
@@ -187,6 +209,7 @@ pub async fn list_attempts_for_date(
             last_name: r.last_name,
             guesses: r.guesses,
             score: r.score,
+            possible_counts: r.possible_counts,
             started_at: r.started_at,
             updated_at: r.updated_at,
         })

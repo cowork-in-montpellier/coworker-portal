@@ -30,6 +30,8 @@ pub struct LeaderboardEntry {
     pub avg_guesses: f64,
     /// Months the player has won to date, whichever month is being shown.
     pub stars: i32,
+    /// True if the player has finished every counted grid of the month (today's included).
+    pub up_to_date: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -39,6 +41,8 @@ pub struct LeaderboardResponse {
     /// True for a month that is over: its ranking is final and later catch-ups on its
     /// grids no longer count.
     pub is_final: bool,
+    /// Number of the month's grids that count so far, today's included.
+    pub grids: i32,
     pub entries: Vec<LeaderboardEntry>,
 }
 
@@ -75,11 +79,13 @@ pub async fn get_leaderboard(
         ranking = service::compute_month_ranking(&state, month, today).await?;
     }
 
+    let grids = service::counted_days(month, today).map_or(0, |(from, to)| (to - from).num_days() as i32 + 1);
     let stars: HashMap<i32, i64> = repository::star_counts(&state.db).await?.into_iter().collect();
     let entries = ranking
         .into_iter()
         .map(|e| LeaderboardEntry {
             last_initial: domain::last_initial(&e.last_name),
+            up_to_date: e.games_played >= grids,
             user_id: e.user_id,
             first_name: e.first_name,
             points: e.points,
@@ -89,5 +95,5 @@ pub async fn get_leaderboard(
         })
         .collect();
 
-    Ok(Json(LeaderboardResponse { month: month.format("%Y-%m").to_string(), is_final, entries }))
+    Ok(Json(LeaderboardResponse { month: month.format("%Y-%m").to_string(), is_final, grids, entries }))
 }

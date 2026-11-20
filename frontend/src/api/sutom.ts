@@ -24,6 +24,7 @@ const ScoreboardPlayerSchema = z.object({
   revealed: z.boolean(),
   score: z.number().nullable(),
   sequence: z.array(z.array(LetterStatusSchema)).nullable(),
+  possible_counts: z.array(z.number()).nullable(),
   first_to_finish: z.boolean(),
   fast: z.boolean(),
   days_late: z.number(),
@@ -45,12 +46,14 @@ const LeaderboardEntrySchema = z.object({
   games_played: z.number(),
   avg_guesses: z.number(),
   stars: z.number(),
+  up_to_date: z.boolean(),
 })
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>
 
 const LeaderboardSchema = z.object({
   month: z.string(),
   is_final: z.boolean(),
+  grids: z.number(),
   entries: z.array(LeaderboardEntrySchema),
 })
 export type Leaderboard = z.infer<typeof LeaderboardSchema>
