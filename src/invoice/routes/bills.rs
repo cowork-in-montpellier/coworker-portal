@@ -326,7 +326,7 @@ pub async fn create_bill(
         .execute(&mut *tx)
         .await?;
     let last_number: Option<String> =
-        sqlx::query_scalar("SELECT number FROM billjobs_bill ORDER BY id DESC LIMIT 1")
+        sqlx::query_scalar("SELECT number FROM billjobs_bill WHERE number ~ '^F[0-9]+$' ORDER BY id DESC LIMIT 1")
             .fetch_optional(&mut *tx)
             .await?;
     let number = next_bill_number(last_number.as_deref(), now.date_naive());
