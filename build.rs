@@ -3,6 +3,9 @@ use std::path::Path;
 use std::process::Command;
 
 fn main() {
+    // Embedded by `sqlx::migrate!`, which doesn't notice new migration files by itself.
+    println!("cargo:rerun-if-changed=migrations");
+    println!("cargo:rerun-if-changed=migrations_sutom");
     println!("cargo:rerun-if-changed=frontend/src");
     println!("cargo:rerun-if-changed=frontend/index.html");
     println!("cargo:rerun-if-changed=frontend/package.json");

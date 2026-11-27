@@ -5,6 +5,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use chrono::{Months, NaiveDate};
 
+use super::ports::PlayerName;
 use super::{domain, repository, source, state::State};
 
 /// Size of the "play a previous day" window, inclusive of today.
@@ -66,11 +67,19 @@ pub async fn effective_par(state: &State, date: NaiveDate, frozen: Option<i32>) 
     }
 }
 
+/// Names of the given players, from the users module. Players whose account is gone
+/// are left out.
+pub async fn player_names(
+    state: &State,
+    user_ids: impl IntoIterator<Item = i32>,
+) -> Result<HashMap<i32, PlayerName>, crate::error::AppError> {
+    let ids: Vec<i32> = user_ids.into_iter().collect::<HashSet<_>>().into_iter().collect();
+    state.players.names(&ids).await.map_err(|e| crate::error::AppError::Internal(format!("{e:#}")))
+}
+
 /// One player's totals over a set of finished attempts.
 pub struct Totals {
     pub user_id: i32,
-    pub first_name: String,
-    pub last_name: String,
     pub points: f64,
     pub games_played: i32,
     score_sum: i32,
@@ -94,8 +103,6 @@ pub fn rank(rows: Vec<repository::ScoreRow>) -> Vec<Totals> {
         let points = domain::leaderboard_points(row.par, row.score, row.is_first, fast, days_late);
         let entry = totals.entry(row.user_id).or_insert_with(|| Totals {
             user_id: row.user_id,
-            first_name: row.first_name,
-            last_name: row.last_name,
             points: 0.0,
             games_played: 0,
             score_sum: 0,
@@ -149,8 +156,6 @@ pub async fn compute_month_ranking(
                 rank: i as i32 + 1,
                 avg_guesses: t.avg_guesses(),
                 user_id: t.user_id,
-                first_name: t.first_name,
-                last_name: t.last_name,
                 points: t.points,
                 games_played: t.games_played,
             }
@@ -186,8 +191,6 @@ mod tests {
         let game_date = NaiveDate::from_ymd_opt(2026, 10, day).unwrap();
         repository::ScoreRow {
             user_id,
-            first_name: format!("P{user_id}"),
-            last_name: String::new(),
             score,
             par,
             game_date,

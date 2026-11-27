@@ -81,13 +81,15 @@ pub async fn get_leaderboard(
 
     let grids = service::counted_days(month, today).map_or(0, |(from, to)| (to - from).num_days() as i32 + 1);
     let stars: HashMap<i32, i64> = repository::star_counts(&state.db).await?.into_iter().collect();
+    let mut names = service::player_names(&state, ranking.iter().map(|e| e.user_id)).await?;
     let entries = ranking
         .into_iter()
-        .map(|e| LeaderboardEntry {
-            last_initial: domain::last_initial(&e.last_name),
+        .filter_map(|e| Some((names.remove(&e.user_id)?, e)))
+        .map(|(name, e)| LeaderboardEntry {
+            last_initial: domain::last_initial(&name.last_name),
             up_to_date: e.games_played >= grids,
             user_id: e.user_id,
-            first_name: e.first_name,
+            first_name: name.first_name,
             points: e.points,
             games_played: e.games_played,
             avg_guesses: e.avg_guesses,

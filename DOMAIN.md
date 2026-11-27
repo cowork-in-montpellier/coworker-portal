@@ -10,10 +10,10 @@ implements, its adapters, and its references to other modules.
 
 | Module | Owns (domain) | References other modules | Ports defined | Ports/extractors implemented for other modules |
 |---|---|---|---|---|
-| [`users`](#module-users) | `User`, invitations, password reset | — | `auth::HasJwt`, `auth::CurrentUser` (shared auth contract) | `invoice::ports::BillingDirectory` via `users::adapters::PgBillingDirectory` |
+| [`users`](#module-users) | `User`, invitations, password reset | — | `auth::HasJwt`, `auth::CurrentUser` (shared auth contract) | `invoice::ports::BillingDirectory` via `users::adapters::PgBillingDirectory`, `sutom::ports::PlayerDirectory` via `users::adapters::PgPlayerDirectory` |
 | [`invoice`](#module-invoice) | `Service`, `Bill`, `Voucher`, `VoucherSpec`, `VoucherStatus` | `users::auth::{HasJwt, CurrentUser}` | `ports::BillingDirectory` | — |
 | [`calendar`](#module-calendar) | `Room`, `Booking` | `users::auth::{HasJwt, CurrentUser}` | — | — |
-| [`sutom`](#module-sutom) | `DailyWord`, `Attempt`, `LetterStatus`, par & leaderboard points | `users::auth::{HasJwt, CurrentUser}` | — | — |
+| [`sutom`](#module-sutom) | `DailyWord`, `Attempt`, `LetterStatus`, par & leaderboard points (own SQLite database) | `users::auth::{HasJwt, CurrentUser}` | `ports::PlayerDirectory` | — |
 
 There is no direct coupling between `invoice`, `calendar` and `sutom`.
 
@@ -21,7 +21,7 @@ There is no direct coupling between `invoice`, `calendar` and `sutom`.
 
 Lives at the crate root, not owned by any single module:
 
-- `src/error.rs` — `AppError` (`Database`, `External`, `NotFound`, `Unauthorized`, `BadRequest`), the shared error/response type used across modules.
+- `src/error.rs` — `AppError` (`Database`, `Internal`, `External`, `NotFound`, `Unauthorized`, `BadRequest`), the shared error/response type used across modules.
 - `src/config.rs` — `InfraConfig`: `DATABASE_URL`, `LISTEN_ADDR`, TLS cert/key paths. The only genuinely cross-module env vars.
 - `src/openapi.rs` — top-level `ApiDoc`, merged at startup with each module's own `openapi::ApiDoc`.
 - `src/main.rs` — composition root: connects the shared `PgPool`, runs migrations, builds the shared `JwtService`, constructs each module's `State`, wires cross-module adapters (e.g. `PgBillingDirectory` into `invoice::State`), registers background tasks, and mounts each module's router.
@@ -66,6 +66,9 @@ to authenticate requests:
 
 ### Ports implemented for other modules
 
+- **`sutom::ports::PlayerDirectory`** is implemented by
+  `users::adapters::PgPlayerDirectory` (`src/users/adapters/player_directory.rs`): players'
+  names from `auth_user` for the SUTOM scoreboards, which live in their own database.
 - **`invoice::ports::BillingDirectory`** is implemented by
   `users::adapters::PgBillingDirectory` (`src/users/adapters/billing_directory.rs`), a thin
   wrapper over `SELECT billing_address FROM billjobs_userprofile WHERE user_id = $1` on the
@@ -794,13 +797,12 @@ Constants:
 
 - **`users::auth::{HasJwt, CurrentUser}`** — `sutom::State` implements `HasJwt`. Every
   sutom route requires authentication and uses `CurrentUser` to identify the player.
-- **`auth_user`** (read-only) — joined in the repository to show players' `first_name` on
-  the scoreboard and leaderboard.
 
 ### Ports defined
 
-None — `sutom` does not expose any port to other modules, and no other module
-implements anything for `sutom`.
+- **`ports::PlayerDirectory`** — players' first and last names by id, for the scoreboard
+  and leaderboard, since the SUTOM database only knows players by id. Implemented by
+  `users::adapters::PgPlayerDirectory` (`SELECT … FROM auth_user WHERE id = ANY($1)`).
 
 ### Internal adapters
 
@@ -888,54 +890,69 @@ with more games played, then to the lower user id, so the order is always the sa
 
 #### Month freeze
 Once a month from October 2026 on is over, its whole ranking is frozen once in
-`portal_sutom_month_ranking` by the nightly task (and at startup, for any month still
+`month_ranking` by the nightly task (and at startup, for any month still
 missing). Its first line is the month's winner, who earns a ⭐. A month nobody played
 has nothing to freeze.
 
 A player's **stars** belong to the player, not to a month: they are the number of frozen
 months the player won, so any ranking (past or current) shows the stars held today.
 
-### Postgres
+### SQLite
 
-This app reads from (no schema ownership):
+`sutom` has its own SQLite database, apart from the billing PostgreSQL one, so the game
+never touches billing data. It is opened by `sutom::db::connect` from `SUTOM_DATABASE_URL`
+(default `sqlite:data/sutom.db`; in production `/var/lib/coworker-portal/sutom.db`, see the
+systemd unit), created on first start, and migrated from `migrations_sutom/` — separate
+from the PostgreSQL `migrations/`.
 
-**`auth_user`** — `first_name` for scoreboard and leaderboard entries.
+Players are `auth_user` ids from the main database. They can't be referenced across
+databases, so there is no foreign key: names come from the `PlayerDirectory` port, and the
+games of a player whose account is gone are simply no longer shown.
 
-This app owns the schema and data for:
+Dates are stored as `YYYY-MM-DD` text and instants as RFC 3339 UTC text, so both compare
+correctly as strings; lists are JSON text.
 
-**`portal_sutom_word`** → `DailyWord`
+**`word`** → `DailyWord`
 | Column | Type | Notes |
 |--------|------|-------|
-| `game_date` | DATE PK | Europe/Paris day |
+| `game_date` | TEXT PK | Europe/Paris day |
 | `word` | TEXT | cleaned word of the day |
-| `puzzle_number` | INT NOT NULL | source site numbering |
-| `par` | INT nullable | frozen par, set once by the nightly task |
-| `created_at` | TIMESTAMPTZ | default `now()` |
+| `puzzle_number` | INTEGER NOT NULL | source site numbering |
+| `par` | INTEGER nullable | frozen par, set once by the nightly task |
 
-**`portal_sutom_attempt`** → `Attempt`
+**`attempt`** → `Attempt`
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | SERIAL PK | |
-| `user_id` | INT | FK → `auth_user.id`, cascade delete |
-| `game_date` | DATE | FK → `portal_sutom_word.game_date`, cascade delete |
-| `guesses` | TEXT[] | default `'{}'` |
-| `score` | INT nullable | null while in progress |
-| `started_at` | TIMESTAMPTZ nullable | set on the first submission, never updated |
-| `updated_at` | TIMESTAMPTZ | default `now()`, refreshed on each submission |
+| `user_id` | INTEGER | `auth_user.id` in the main database |
+| `game_date` | TEXT | FK → `word.game_date`, cascade delete |
+| `guesses` | TEXT | JSON array, default `'[]'` |
+| `score` | INTEGER nullable | null while in progress |
+| `possible_counts` | TEXT nullable | JSON array, words still possible at each guess, set when the game ends |
+| `started_at` | TEXT nullable | set on the first submission, never updated |
+| `updated_at` | TEXT | refreshed on each submission |
 
-Constraint: `UNIQUE (user_id, game_date)`.
+Primary key: `(user_id, game_date)`.
 
-**`portal_sutom_month_ranking`**
+**`month_ranking`**
 | Column | Type | Notes |
 |--------|------|-------|
-| `month` | DATE | first day of the month |
-| `user_id` | INT | FK → `auth_user.id`, cascade delete |
-| `rank` | INT | 1 = winner of the month |
-| `points` | DOUBLE PRECISION | |
-| `games_played` | INT | |
-| `avg_guesses` | DOUBLE PRECISION | |
+| `month` | TEXT | first day of the month |
+| `user_id` | INTEGER | `auth_user.id` in the main database |
+| `rank` | INTEGER | 1 = winner of the month |
+| `points` | REAL | |
+| `games_played` | INTEGER | |
+| `avg_guesses` | REAL | |
 
 Primary key: `(month, user_id)`.
+
+#### Move from PostgreSQL
+
+SUTOM data used to live in the shared PostgreSQL database (`portal_sutom_word`,
+`portal_sutom_attempt`, `portal_sutom_month_ranking`, migrations `0016`–`0022`). At startup,
+`sutom::legacy_import` copies them once into the SQLite database while it is still empty,
+in a single transaction. The old tables and migrations are kept for now (sqlx refuses to
+start if an applied migration file disappears); once every environment has moved, a
+PostgreSQL migration can drop the tables and `legacy_import` can go.
 
 ### Edges
 

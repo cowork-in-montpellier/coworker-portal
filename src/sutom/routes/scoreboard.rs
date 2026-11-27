@@ -71,6 +71,8 @@ pub async fn get_scoreboard(
     let mut attempts = repository::list_attempts_for_date(&state.db, date).await?;
     backfill_possible_counts(&state, date, &daily.word, &mut attempts).await?;
     let par = service::effective_par(&state, date, daily.par).await?;
+    let mut names = service::player_names(&state, attempts.iter().map(|a| a.user_id)).await?;
+    attempts.retain(|a| names.contains_key(&a.user_id));
 
     let viewer_finished = attempts.iter().any(|a| a.user_id == user.id && a.score.is_some());
     let first_finisher_id = attempts
@@ -103,7 +105,7 @@ pub async fn get_scoreboard(
             .then_with(|| a.updated_at.cmp(&b.updated_at)),
         (Some(_), None) => Ordering::Less,
         (None, Some(_)) => Ordering::Greater,
-        (None, None) => a.first_name.cmp(&b.first_name),
+        (None, None) => names[&a.user_id].first_name.cmp(&names[&b.user_id].first_name),
     });
 
     let players = scored
@@ -114,11 +116,12 @@ pub async fn get_scoreboard(
             let sequence = revealed
                 .then(|| a.guesses.iter().map(|g| domain::score_guess(&daily.word, g)).collect());
             let possible_counts = if revealed { a.possible_counts } else { None };
+            let name = names.remove(&a.user_id).expect("players without a name were filtered out");
 
             ScoreboardPlayer {
                 user_id: a.user_id,
-                first_name: a.first_name,
-                last_initial: domain::last_initial(&a.last_name),
+                first_name: name.first_name,
+                last_initial: domain::last_initial(&name.last_name),
                 finished,
                 revealed,
                 score: a.score,

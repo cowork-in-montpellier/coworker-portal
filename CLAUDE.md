@@ -61,3 +61,10 @@ This application shares a PostgreSQL database with an external Django billing ap
 - External tables (never rename): `billjobs_bill`, `billjobs_billline`, `billjobs_service`, `billjobs_userprofile`, `auth_user`
 
 When adding a new table, always use the `portal_` prefix.
+
+### SUTOM database
+
+The SUTOM game is kept apart from billing in its own SQLite database (`SUTOM_DATABASE_URL`,
+default `sqlite:data/sutom.db`), with its own migrations in `migrations_sutom/`. Its tables
+need no prefix. Never add SUTOM tables to PostgreSQL, and never touch billing data from
+`src/sutom/`: players' names come through the `sutom::ports::PlayerDirectory` port.

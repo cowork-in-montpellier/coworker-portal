@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::{Json, response::Html, routing::get};
 use axum_swagger_ui::swagger_ui;
 use sqlx::postgres::PgPoolOptions;
@@ -109,8 +109,12 @@ async fn main() -> Result<()> {
         config: Arc::new(calendar_config),
     };
 
+    let sutom_db = sutom::db::connect(&sutom_config.database_url).await?;
+    sutom::legacy_import::run(&db, &sutom_db).await.context("copying SUTOM data from PostgreSQL")?;
+
     let sutom_state = sutom::State {
-        db: db.clone(),
+        db: sutom_db,
+        players: Arc::new(users::adapters::PgPlayerDirectory::new(db.clone())),
         http: reqwest::Client::builder().user_agent("coworker-portal-sutom/1.0").build()?,
         jwt: jwt.clone(),
         dictionaries: Arc::new(sutom::dictionary::DictionaryCache::new(sutom_config.dictionary_ttl)),
