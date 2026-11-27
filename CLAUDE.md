@@ -62,16 +62,17 @@ This application shares a PostgreSQL database with an external Django billing ap
 
 When adding a new table, always use the `portal_` prefix.
 
-### SUTOM and calendar databases
+### SUTOM, calendar and lunch databases
 
-The SUTOM game and the room calendar are kept apart from billing, each in its own SQLite
+The SUTOM game, the room calendar and Pause-déj (lunch) are kept apart from billing, each in its own SQLite
 file, opened through `src/sqlite.rs`:
 
 | Module | URL variable (default) | Migrations |
 |---|---|---|
 | `sutom` | `SUTOM_DATABASE_URL` (`sqlite:data/sutom.db`) | `migrations_sutom/` |
 | `calendar` | `CALENDAR_DATABASE_URL` (`sqlite:data/calendar.db`) | `migrations_calendar/` |
+| `lunch` | `LUNCH_DATABASE_URL` (`sqlite:data/lunch.db`) | `migrations_lunch/` |
 
-Their tables need no prefix. Never add SUTOM or calendar tables to PostgreSQL, and never
-touch billing data from `src/sutom/` or `src/calendar/`: SUTOM gets players' names through
-the `sutom::ports::PlayerDirectory` port.
+Their tables need no prefix. Never add SUTOM, calendar or lunch tables to PostgreSQL, and never
+touch billing data from `src/sutom/`, `src/calendar/` or `src/lunch/`: SUTOM gets players' names through
+the `sutom::ports::PlayerDirectory` port, lunch through `lunch::ports::MemberDirectory`.

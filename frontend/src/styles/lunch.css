@@ -1,0 +1,327 @@
+/* Pause-déj: the Cowork'in design system (Museo titles, one blue accent, 2px borders,
+   pill actions, no shadows to separate) inside the portal's daisyUI themes. */
+
+@font-face {
+  font-family: 'Museo';
+  src: url('/fonts/Museo500-Regular.otf') format('opentype');
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Museo';
+  src: url('/fonts/Museo700-Regular.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+.lunch {
+  /* Brand blue, decorative fills only (rule under the title). */
+  --cw-primary: #35a8e0;
+  /* Blue for text, icons and filled buttons: 5.64:1 on white. */
+  --cw-blue: #176e98;
+  --cw-blue-hover: #125a7c;
+  --cw-on-blue: #ffffff;
+  /* Light tint behind the selected chips and the "I'm going" card. */
+  --cw-blue-soft: #e6f4fb;
+  --cw-display: Museo, 'Playfair Display', serif;
+}
+
+/* Dark portal theme: lighter blue for text, darker fills, so both keep AA contrast. */
+[data-theme='dim'] .lunch {
+  --cw-blue: #8dceee;
+  --cw-blue-hover: #b5e0f5;
+  --cw-on-blue: #0f2a38;
+  --cw-blue-soft: rgba(53, 168, 224, 0.16);
+}
+
+.lunch-title {
+  font-family: var(--cw-display);
+  font-weight: 700;
+  font-size: 30px;
+  line-height: 1;
+}
+
+@media (min-width: 768px) {
+  .lunch-title {
+    font-size: 36px;
+  }
+}
+
+/* The 96 × 8 px blue rule under every section title. */
+.lunch-rule {
+  width: 96px;
+  height: 8px;
+  background: var(--cw-primary);
+  border-radius: 0;
+}
+
+.lunch-subtitle {
+  font-family: var(--cw-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.lunch-card {
+  background: var(--color-base-100);
+  border: 2px solid var(--color-base-300);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 200ms;
+}
+
+.lunch-card.is-mine {
+  border-color: var(--cw-blue);
+  background: linear-gradient(var(--cw-blue-soft), var(--cw-blue-soft)), var(--color-base-100);
+}
+
+.lunch-card.is-closed {
+  opacity: 0.7;
+}
+
+/* Cover band: the cuisine's icon on a blue tint, flush with the card's top edge. */
+.lunch-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 88px;
+  padding: 20px;
+  flex-shrink: 0;
+  text-align: center;
+  background: var(--cw-blue-soft);
+  color: var(--cw-blue);
+}
+
+.lunch-card.is-mine .lunch-cover {
+  background: var(--cw-blue);
+  color: var(--cw-on-blue);
+}
+
+.lunch-card-name {
+  font-family: var(--cw-display);
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 28px;
+  color: var(--cw-blue);
+}
+
+.lunch-description {
+  max-width: 32ch;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--color-base-content);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.lunch-card.is-mine .lunch-description {
+  color: var(--cw-on-blue);
+}
+
+/* A thin rule above the card's actions. */
+.lunch-card-footer {
+  border-top: 2px solid var(--color-base-200);
+}
+
+.lunch-card.is-mine .lunch-card-footer {
+  border-top-color: color-mix(in oklch, var(--cw-blue) 25%, transparent);
+}
+
+.lunch-blue {
+  color: var(--cw-blue);
+}
+
+/* Pill buttons: filled blue, or outlined. */
+.lunch-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding: 0.5rem 1.25rem;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 2px solid var(--cw-blue);
+  background: var(--cw-blue);
+  color: var(--cw-on-blue);
+  cursor: pointer;
+  transition:
+    background-color 200ms,
+    border-color 200ms,
+    color 200ms;
+}
+
+.lunch-btn:hover {
+  background: var(--cw-blue-hover);
+  border-color: var(--cw-blue-hover);
+}
+
+.lunch-btn.is-outline {
+  background: transparent;
+  color: var(--cw-blue);
+}
+
+.lunch-btn.is-outline:hover {
+  background: var(--cw-blue-soft);
+}
+
+.lunch-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+/* Filter and cuisine chips. */
+.lunch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.125rem 0.75rem;
+  font-size: 14px;
+  line-height: 24px;
+  border: 2px solid var(--color-base-300);
+  background: var(--color-base-100);
+  color: var(--color-base-content);
+  cursor: pointer;
+  transition:
+    background-color 200ms,
+    border-color 200ms;
+}
+
+.lunch-chip:hover {
+  border-color: var(--cw-blue);
+}
+
+.lunch-chip[aria-pressed='true'] {
+  border-color: var(--cw-blue);
+  background: var(--cw-blue-soft);
+  color: var(--cw-blue);
+  font-weight: 700;
+}
+
+/* On the chosen card the tint is the card's own background: lift the tags off it. */
+.lunch-card.is-mine .lunch-tag.is-perk {
+  background: var(--color-base-100);
+}
+
+.lunch-tag.is-perk {
+  background: var(--cw-blue-soft);
+  color: var(--cw-blue);
+}
+
+.lunch-tag {
+  display: inline-block;
+  border-radius: 9999px;
+  padding: 0 0.625rem;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 700;
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+}
+
+/* Weekday pills: today in blue, closed days struck through. */
+.lunch-day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+}
+
+.lunch-day.is-closed {
+  background: transparent;
+  text-decoration: line-through;
+  opacity: 0.45;
+}
+
+.lunch-day.is-today {
+  background: var(--cw-blue);
+  color: var(--cw-on-blue);
+  opacity: 1;
+}
+
+.lunch-day.is-today.is-closed {
+  background: transparent;
+  color: var(--color-base-content);
+  outline: 2px solid var(--cw-blue);
+  outline-offset: -2px;
+}
+
+/* Rating stars. */
+.lunch-star {
+  color: color-mix(in oklch, var(--color-base-content) 22%, transparent);
+}
+
+.lunch-star.is-on {
+  color: var(--cw-blue);
+}
+
+/* The average and one's own rating share one cell size, so both rows of stars line up. */
+.lunch-stars {
+  display: inline-flex;
+  margin-left: -2px;
+}
+
+.lunch-star-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 15px;
+}
+
+.lunch-star-btn {
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.lunch-star-btn:disabled {
+  cursor: wait;
+}
+
+/* Initials bubble of a member going somewhere. */
+.lunch-goer {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  padding: 0 0.625rem;
+  font-size: 13px;
+  line-height: 24px;
+  background: var(--cw-blue-soft);
+  color: var(--cw-blue);
+  font-weight: 700;
+}
+
+.lunch-goer.is-me {
+  background: var(--cw-blue);
+  color: var(--cw-on-blue);
+}
+
+/* Keyboard focus: 2px of the background, then 2px of blue, following the rounding. */
+.lunch :where(button, a, input, select, summary):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--color-base-100),
+    0 0 0 4px var(--cw-blue);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lunch * {
+    transition: none !important;
+  }
+}
