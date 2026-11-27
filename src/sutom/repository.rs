@@ -148,12 +148,33 @@ pub async fn set_possible_counts(
     Ok(())
 }
 
+/// Sets (or clears, with `None`) a player's reaction to a day's game. Returns false if
+/// they have no finished game that day to react to.
+pub async fn set_reaction(
+    db: &SqlitePool,
+    user_id: i32,
+    date: NaiveDate,
+    reaction: Option<&str>,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE attempt SET reaction = $3 WHERE user_id = $1 AND game_date = $2 AND score IS NOT NULL",
+    )
+    .bind(user_id)
+    .bind(date)
+    .bind(reaction)
+    .execute(db)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub struct PlayerAttempt {
     pub user_id: i32,
     pub guesses: Vec<String>,
     pub score: Option<i32>,
     /// Possible words when each guess was made, once the game is finished.
     pub possible_counts: Option<Vec<i32>>,
+    /// The emote the player reacted to their finished game with, if any.
+    pub reaction: Option<String>,
     pub started_at: Option<DateTime<Utc>>,
     pub updated_at: DateTime<Utc>,
 }
@@ -166,12 +187,14 @@ pub async fn list_attempts_for_date(db: &SqlitePool, date: NaiveDate) -> Result<
         guesses: Json<Vec<String>>,
         score: Option<i32>,
         possible_counts: Option<Json<Vec<i32>>>,
+        reaction: Option<String>,
         started_at: Option<DateTime<Utc>>,
         updated_at: DateTime<Utc>,
     }
 
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT user_id, guesses, score, possible_counts, started_at, updated_at FROM attempt WHERE game_date = $1",
+        "SELECT user_id, guesses, score, possible_counts, reaction, started_at, updated_at
+         FROM attempt WHERE game_date = $1",
     )
     .bind(date)
     .fetch_all(db)
@@ -184,6 +207,7 @@ pub async fn list_attempts_for_date(db: &SqlitePool, date: NaiveDate) -> Result<
             guesses: r.guesses.0,
             score: r.score,
             possible_counts: r.possible_counts.map(|c| c.0),
+            reaction: r.reaction,
             started_at: r.started_at,
             updated_at: r.updated_at,
         })
@@ -343,6 +367,21 @@ mod tests {
         assert_eq!(listed[0].possible_counts, Some(vec![5, 3]));
         // The first guess's time is kept when the game goes on.
         assert!(listed[0].started_at.unwrap() <= listed[0].updated_at);
+    }
+
+    #[tokio::test]
+    async fn reactions_need_a_finished_game() {
+        let db = db::in_memory().await;
+        upsert_word(&db, date(1), "BILLE", 1).await.unwrap();
+        upsert_attempt(&db, 7, date(1), &guesses(&["BELLE"]), None, None).await.unwrap();
+        assert!(!set_reaction(&db, 7, date(1), Some("😎")).await.unwrap());
+
+        upsert_attempt(&db, 7, date(1), &guesses(&["BELLE", "BILLE"]), Some(2), None).await.unwrap();
+        assert!(set_reaction(&db, 7, date(1), Some("😎")).await.unwrap());
+        assert_eq!(list_attempts_for_date(&db, date(1)).await.unwrap()[0].reaction.as_deref(), Some("😎"));
+
+        assert!(set_reaction(&db, 7, date(1), None).await.unwrap());
+        assert_eq!(list_attempts_for_date(&db, date(1)).await.unwrap()[0].reaction, None);
     }
 
     #[tokio::test]
