@@ -32,30 +32,49 @@ export function Navbar() {
 
   const visibleNavItems = authenticated ? navItems : []
 
+  const logo = (
+    <Link to={authenticated ? '/dashboard' : '/login'} className="shrink-0">
+      <img src="/logo-default.png" alt="Cowork'in Montpellier" className="h-10" />
+    </Link>
+  )
+
+  const themeToggle = (
+    <input
+      type="checkbox"
+      className="toggle toggle-sm"
+      checked={theme === 'dim'}
+      onChange={e => handleThemeChange(e.target.checked ? 'dim' : 'corporate')}
+      aria-label="Mode sombre"
+    />
+  )
+
   return (
     <div className="navbar bg-base-100 border-b border-base-200 px-4">
       <div className="navbar-start gap-4">
-        {authenticated && (
-          <div className="dropdown lg:hidden">
-            <div tabIndex={0} role="button" className="btn btn-ghost btn-sm px-2" aria-label="Ouvrir le menu">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </div>
-            <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-200 z-50 w-64 p-1 mt-3">
-              {visibleNavItems.map(item => (
-                <li key={item.to}>
-                  <Link to={item.to} className={isActive(item.to) ? 'active' : ''}>
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
+        {/* Compact layout: navigation and the theme switch go in the menu, the logo in the middle */}
+        <div className="dropdown lg:hidden">
+          <div tabIndex={0} role="button" className="btn btn-ghost btn-sm px-2" aria-label="Ouvrir le menu">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
           </div>
-        )}
-        <Link to={authenticated ? '/dashboard' : '/login'}>
-          <img src="/logo-default.png" alt="Coworking" className="h-8" />
-        </Link>
+          <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-200 z-50 w-64 p-1 mt-3">
+            {visibleNavItems.map(item => (
+              <li key={item.to}>
+                <Link to={item.to} className={isActive(item.to) ? 'active' : ''}>
+                  {item.label}
+                </Link>
+              </li>
+            ))}
+            <li className={visibleNavItems.length > 0 ? 'border-t border-base-200 mt-1 pt-1' : ''}>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span>🌙 Mode sombre</span>
+                {themeToggle}
+              </label>
+            </li>
+          </ul>
+        </div>
+        <div className="hidden lg:block">{logo}</div>
         <nav className="hidden lg:flex items-center gap-1">
           {visibleNavItems.map(item => (
             <Link
@@ -68,17 +87,15 @@ export function Navbar() {
           ))}
         </nav>
       </div>
+      <div className="navbar-center lg:hidden">{logo}</div>
       <div className="navbar-end gap-3">
-        <label className="flex items-center gap-1 cursor-pointer" title={theme === 'corporate' ? 'Passer en mode sombre' : 'Passer en mode clair'}>
-          <span className="text-sm">☀️</span>
-          <input
-            type="checkbox"
-            className="toggle toggle-sm"
-            checked={theme === 'dim'}
-            onChange={e => handleThemeChange(e.target.checked ? 'dim' : 'corporate')}
-            aria-label="Changer de thème"
-          />
-          <span className="text-sm">🌙</span>
+        <label
+          className="hidden lg:flex items-center gap-1 cursor-pointer"
+          title={theme === 'corporate' ? 'Passer en mode sombre' : 'Passer en mode clair'}
+        >
+          <span className="text-sm" aria-hidden="true">☀️</span>
+          {themeToggle}
+          <span className="text-sm" aria-hidden="true">🌙</span>
         </label>
         {authenticated && user ? (
           <div className="dropdown dropdown-end">

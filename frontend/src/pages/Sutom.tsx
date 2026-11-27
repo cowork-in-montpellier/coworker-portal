@@ -984,7 +984,7 @@ export function Sutom() {
                     return (
                       <button
                         key={key}
-                        className="cw-key btn btn-sm sm:btn-md btn-primary px-0 flex-[2]"
+                        className="btn btn-sm sm:btn-md btn-primary px-0 flex-[2]"
                         onClick={submitGuess}
                         disabled={gameOver || submitting}
                       >
@@ -996,7 +996,7 @@ export function Sutom() {
                     return (
                       <button
                         key={key}
-                        className="cw-key btn btn-sm sm:btn-md btn-outline px-0 flex-1"
+                        className="btn btn-sm sm:btn-md btn-outline px-0 flex-1"
                         onClick={backspace}
                         disabled={gameOver || submitting}
                       >
@@ -1007,7 +1007,7 @@ export function Sutom() {
                   return (
                     <button
                       key={key}
-                      className={`cw-key btn btn-sm sm:btn-md px-0 flex-1 ${keyStyle(keyStatuses[key]) ? '' : 'btn-outline'}`}
+                      className={`btn btn-sm sm:btn-md px-0 flex-1 ${keyStyle(keyStatuses[key]) ? '' : 'btn-outline'}`}
                       style={keyStyle(keyStatuses[key])}
                       onClick={() => typeLetter(key)}
                       disabled={gameOver || submitting}

@@ -1,5 +1,5 @@
 /* The Cowork'in design system, shared by every page: Museo titles under a blue rule, one blue
-   accent, cards separated by 2px borders rather than shadows, pill-shaped actions. */
+   accent, cards separated by 2px borders rather than shadows. */
 
 @font-face {
   font-family: 'Museo';
@@ -77,12 +77,6 @@
   .cw-blue {
     color: var(--cw-blue);
   }
-}
-
-/* Actions are pills; buttons inside a `join` keep their joined corners, and keys of a virtual
-   keyboard (`cw-key`) keep daisyUI's own radius. Unlayered, so it wins over daisyUI's radius. */
-.btn:not(.join-item):not(.btn-circle):not(.btn-square):not(.cw-key) {
-  border-radius: 9999px;
 }
 
 /* Keyboard focus: 2px of the background, then 2px of blue, following the rounding. */
