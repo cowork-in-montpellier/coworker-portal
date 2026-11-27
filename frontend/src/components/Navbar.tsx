@@ -24,6 +24,7 @@ export function Navbar() {
     { to: '/calendar', label: "Réservations de salle d'appel" },
     { to: '/live', label: 'Live' },
     { to: '/sutom', label: 'SUTOM' },
+    { to: '/pause-dej', label: 'Pause-déj' },
   ]
 
   const isActive = (to: string) =>

@@ -7,6 +7,7 @@ fn main() {
     println!("cargo:rerun-if-changed=migrations");
     println!("cargo:rerun-if-changed=migrations_sutom");
     println!("cargo:rerun-if-changed=migrations_calendar");
+    println!("cargo:rerun-if-changed=migrations_lunch");
     println!("cargo:rerun-if-changed=frontend/src");
     println!("cargo:rerun-if-changed=frontend/index.html");
     println!("cargo:rerun-if-changed=frontend/package.json");

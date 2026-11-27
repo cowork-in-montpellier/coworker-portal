@@ -13,6 +13,7 @@ mod calendar;
 mod config;
 mod error;
 mod invoice;
+mod lunch;
 mod openapi;
 mod sqlite;
 mod sutom;
@@ -36,6 +37,7 @@ async fn main() -> Result<()> {
     let invoice_config = invoice::Config::from_env()?;
     let calendar_config = calendar::Config::from_env()?;
     let sutom_config = sutom::Config::from_env()?;
+    let lunch_config = lunch::Config::from_env()?;
 
     let db = PgPoolOptions::new()
         .max_connections(5)
@@ -125,6 +127,12 @@ async fn main() -> Result<()> {
         config: Arc::new(sutom_config),
     };
 
+    let lunch_state = lunch::State {
+        db: lunch::db::connect(&lunch_config.database_url).await?,
+        members: Arc::new(users::adapters::PgMemberDirectory::new(db.clone())),
+        jwt: jwt.clone(),
+    };
+
     let scheduler = JobScheduler::new().await?;
     invoice::tasks::register(&scheduler, invoice_state.clone()).await?;
     calendar::tasks::register(&scheduler, calendar_state.clone()).await?;
@@ -136,6 +144,7 @@ async fn main() -> Result<()> {
     api_doc.merge(invoice::openapi::ApiDoc::openapi());
     api_doc.merge(calendar::openapi::ApiDoc::openapi());
     api_doc.merge(sutom::openapi::ApiDoc::openapi());
+    api_doc.merge(lunch::openapi::ApiDoc::openapi());
 
     let (router, api) = OpenApiRouter::with_openapi(api_doc)
         .nest("/api/auth", users::routes::auth_router().with_state(users_state.clone()))
@@ -143,6 +152,7 @@ async fn main() -> Result<()> {
         .nest("/api", invoice::routes::router().with_state(invoice_state))
         .nest("/api", calendar::routes::router().with_state(calendar_state))
         .nest("/api", sutom::routes::router().with_state(sutom_state))
+        .nest("/api", lunch::routes::router().with_state(lunch_state))
         .split_for_parts();
 
     let app = router

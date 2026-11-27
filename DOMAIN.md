@@ -1,7 +1,7 @@
 # Domain design
 
 The backend (`src/`) is organized as hexagonal/DDD-lite **modules**: `users`, `invoice`,
-`calendar`, `sutom`. Each module owns its domain types, DB access, HTTP routes, background tasks
+`calendar`, `sutom`, `lunch`. Each module owns its domain types, DB access, HTTP routes, background tasks
 and config slice. Modules only depend on each other through small published surfaces
 ("ports"); this document lists, per module, its domain types, the ports it defines or
 implements, its adapters, and its references to other modules.
@@ -10,12 +10,13 @@ implements, its adapters, and its references to other modules.
 
 | Module | Owns (domain) | References other modules | Ports defined | Ports/extractors implemented for other modules |
 |---|---|---|---|---|
-| [`users`](#module-users) | `User`, invitations, password reset | — | `auth::HasJwt`, `auth::CurrentUser` (shared auth contract) | `invoice::ports::BillingDirectory` via `users::adapters::PgBillingDirectory`, `sutom::ports::PlayerDirectory` via `users::adapters::PgPlayerDirectory` |
+| [`users`](#module-users) | `User`, invitations, password reset | — | `auth::HasJwt`, `auth::CurrentUser` (shared auth contract) | `invoice::ports::BillingDirectory` via `users::adapters::PgBillingDirectory`, `sutom::ports::PlayerDirectory` via `users::adapters::PgPlayerDirectory`, `lunch::ports::MemberDirectory` via `users::adapters::PgMemberDirectory` |
 | [`invoice`](#module-invoice) | `Service`, `Bill`, `Voucher`, `VoucherSpec`, `VoucherStatus` | `users::auth::{HasJwt, CurrentUser}` | `ports::BillingDirectory` | — |
 | [`calendar`](#module-calendar) | `Room`, `Booking` (own SQLite database) | `users::auth::{HasJwt, CurrentUser}` | — | — |
 | [`sutom`](#module-sutom) | `DailyWord`, `Attempt`, `LetterStatus`, par & leaderboard points (own SQLite database) | `users::auth::{HasJwt, CurrentUser}` | `ports::PlayerDirectory` | — |
+| [`lunch`](#module-lunch) | `Place`, `Rating`, `Intention` — Pause-déj (own SQLite database) | `users::auth::{HasJwt, CurrentUser}` | `ports::MemberDirectory` | — |
 
-There is no direct coupling between `invoice`, `calendar` and `sutom`.
+There is no direct coupling between `invoice`, `calendar`, `sutom` and `lunch`.
 
 ## Shared kernel
 
@@ -23,7 +24,7 @@ Lives at the crate root, not owned by any single module:
 
 - `src/error.rs` — `AppError` (`Database`, `Internal`, `External`, `NotFound`, `Unauthorized`, `BadRequest`), the shared error/response type used across modules.
 - `src/config.rs` — `InfraConfig`: `DATABASE_URL`, `LISTEN_ADDR`, TLS cert/key paths. The only genuinely cross-module env vars.
-- `src/sqlite.rs` — opens a module's own SQLite database (file and directory created on first use, WAL, foreign keys on). Used by `sutom` and `calendar`, each with its own file and its own migrations.
+- `src/sqlite.rs` — opens a module's own SQLite database (file and directory created on first use, WAL, foreign keys on). Used by `sutom`, `calendar` and `lunch`, each with its own file and its own migrations.
 - `src/openapi.rs` — top-level `ApiDoc`, merged at startup with each module's own `openapi::ApiDoc`.
 - `src/main.rs` — composition root: connects the shared `PgPool`, runs migrations, builds the shared `JwtService`, constructs each module's `State`, wires cross-module adapters (e.g. `PgBillingDirectory` into `invoice::State`), registers background tasks, and mounts each module's router.
 
@@ -1067,3 +1068,100 @@ startup, and an invalid one stops the server from starting.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SUTOM_REFRESH_CRON` | `0 5 0 * * *` | 6-field cron expression for the nightly refresh (00:05 Paris), evaluated in Europe/Paris timezone |
+
+---
+
+## Module: `lunch`
+
+Pause-déj: the places where members usually have lunch around the coworking, their
+ratings, and who means to go where today. Page `/pause-dej`.
+
+### Domain types
+
+Place : Somewhere to have lunch.
+```typescript
+type Place = {
+    id: int
+    name: string           // 1..80 chars
+    cuisine: string        // free text ("Burgers", "Libanais"...), may be empty; suggestions come from the types in use
+    address: string        // may be empty
+    mapsUrl: string | null // the place's Google Maps page, http(s) only
+    openDays: Weekday[]    // at least one; stored as a bit mask (Mon = 1 … Fri = 16)
+    underTenEuros: boolean // one can have lunch there for less than 10 €
+    veggieFriendly: boolean // vegetarians find something good to eat there
+    phone: string | null   // to call the place (order ahead), as typed in: digits, spaces, + . - ( ), at least 6 digits
+    description: string    // a few words written by members, may be empty; at most 500 chars
+    isGamelle: boolean     // the one "J'ai ma gamelle" entry, for those who brought their lunch
+    createdBy: int | null  // ref User (auth_user.id); null for seeded places
+    updatedBy: int | null
+
+    // invariant: exactly one place has isGamelle, seeded by migration; it is open every day
+    //            and can't be rated, changed or deleted
+}
+
+type Weekday = "mon" | "tue" | "wed" | "thu" | "fri"
+```
+
+Rating : A member's rating of a place.
+```typescript
+type Rating = {
+    placeId: int   // ref Place, cascade delete
+    userId: int    // ref User (auth_user.id)
+    stars: int     // 1..5
+
+    // invariant: one rating per (placeId, userId)
+}
+```
+
+Intention : Where a member means to have lunch on a day.
+```typescript
+type Intention = {
+    userId: int    // ref User (auth_user.id)
+    lunchDate: Date  // Europe/Paris day; only ever set for today
+    placeId: int   // ref Place, cascade delete
+
+    // invariant: one intention per (userId, lunchDate): a new choice replaces the earlier one
+}
+```
+
+### References to other modules
+
+- **`users::auth::{HasJwt, CurrentUser}`** — `lunch::State` implements `HasJwt`. Every
+  route requires authentication. Any member can create, change or delete any place
+  (it's an association: everyone keeps the list up to date).
+
+### Ports defined
+
+- **`ports::MemberDirectory`** — members' first and last names by id, to show who goes
+  where, since the lunch database only knows members by id. Implemented by
+  `users::adapters::PgMemberDirectory` (`SELECT … FROM auth_user WHERE id = ANY($1)`).
+
+### SQLite
+
+`lunch` has its own SQLite database, apart from the billing PostgreSQL one, so it never
+touches billing data. It is opened by `lunch::db::connect` from `LUNCH_DATABASE_URL`
+(default `sqlite:data/lunch.db`; in production `/var/lib/coworker-portal/lunch.db`, see the
+systemd unit), created on first start, and migrated from `migrations_lunch/`.
+`0002_seed.sql` adds the gamelle entry and the usual places, `0003` the `under_ten_euros`
+column and more places, `0004` their Maps links and details, `0005` the `phone` column with the places' numbers, `0006` the `description` and `veggie_friendly` columns.
+
+**`place`** → `Place` (`open_days` INTEGER bit mask, `is_gamelle` unique when 1)
+**`rating`** → `Rating`, primary key `(place_id, user_id)`
+**`intention`** → `Intention`, primary key `(user_id, lunch_date)`
+
+### Features
+
+All routes are mounted under `/api` and require authentication.
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/lunch/today` | Every place (gamelle first) with average rating, count, the member's own rating, whether it is open today, and who goes there today; the cuisines in use; the member's choice for today |
+| POST | `/lunch/places` | Create a place |
+| PUT | `/lunch/places/{id}` | Change a place (`400` for the gamelle) |
+| DELETE | `/lunch/places/{id}` | Delete a place, its ratings and intentions (`400` for the gamelle) |
+| PUT | `/lunch/places/{id}/rating` | `{ stars: 1..5 \| null }` (`400` for the gamelle) |
+| PUT | `/lunch/today/intention` | `{ place_id \| null }`, today (Paris time) only |
+
+Sorting (rating, today's goers, name) and filtering (open today, under 10 €, veggie-friendly, cuisines) are
+done by the page; weekends show every place. Each card shows an icon picked from the
+cuisine's free text by keywords (`frontend/src/lib/cuisineIcons.ts`, Font Awesome Free).

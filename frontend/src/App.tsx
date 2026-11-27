@@ -15,6 +15,7 @@ import { GuestSummary } from './pages/GuestSummary'
 import { InviteMember } from './pages/InviteMember'
 import { Landing } from './pages/Landing'
 import { Live } from './pages/Live'
+import { Lunch } from './pages/Lunch'
 import { Profile } from './pages/Profile'
 import { ResetPassword } from './pages/ResetPassword'
 import { Sutom } from './pages/Sutom'
@@ -49,6 +50,7 @@ function App() {
         <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
         <Route path="/live" element={<ProtectedRoute><Live /></ProtectedRoute>} />
         <Route path="/sutom" element={<ProtectedRoute><Sutom /></ProtectedRoute>} />
+        <Route path="/pause-dej" element={<ProtectedRoute><Lunch /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
