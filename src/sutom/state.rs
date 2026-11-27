@@ -5,10 +5,13 @@ use crate::users::jwt::JwtService;
 
 use super::config::Config;
 use super::dictionary::DictionaryCache;
+use super::ports::PlayerDirectory;
 
 #[derive(Clone)]
 pub struct State {
-    pub db: sqlx::PgPool,
+    /// SUTOM's own SQLite database, apart from the billing one.
+    pub db: sqlx::SqlitePool,
+    pub players: Arc<dyn PlayerDirectory>,
     pub http: reqwest::Client,
     pub jwt: Arc<JwtService>,
     pub config: Arc<Config>,

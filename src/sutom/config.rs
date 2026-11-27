@@ -1,5 +1,6 @@
 #[derive(Clone)]
 pub struct Config {
+    pub database_url: String,
     pub refresh_cron: String,
     pub dictionary_ttl: std::time::Duration,
 }
@@ -7,6 +8,8 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
         Ok(Self {
+            // SUTOM's own SQLite file, created on first start.
+            database_url: std::env::var("SUTOM_DATABASE_URL").unwrap_or_else(|_| "sqlite:data/sutom.db".into()),
             // Shortly after midnight Paris time, so the day's word is warm before the first player.
             refresh_cron: std::env::var("SUTOM_REFRESH_CRON")
                 .unwrap_or_else(|_| "0 5 0 * * *".into()),
