@@ -66,7 +66,7 @@ pub async fn list_rooms(
     State(state): State<CalendarState>,
 ) -> ApiResult<Json<Vec<RoomResponse>>> {
     let rooms = sqlx::query_as::<_, RoomResponse>(
-        "SELECT id, name, color FROM portal_room ORDER BY id",
+        "SELECT id, name, color FROM room ORDER BY id",
     )
     .fetch_all(&state.db)
     .await
@@ -90,7 +90,7 @@ pub async fn room_calendar(
     Path(id): Path<i32>,
 ) -> ApiResult<IcalResponse> {
     let room = sqlx::query_as::<_, RoomResponse>(
-        "SELECT id, name, color FROM portal_room WHERE id = $1",
+        "SELECT id, name, color FROM room WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&state.db)
@@ -99,7 +99,7 @@ pub async fn room_calendar(
     .ok_or((StatusCode::NOT_FOUND, Json(json!({"error": "Salle introuvable"}))))?;
 
     let bookings = sqlx::query_as::<_, BookingRow>(
-        "SELECT id, title, start_at, end_at, notes, created_at FROM portal_room_booking WHERE room_id = $1 ORDER BY start_at",
+        "SELECT id, title, start_at, end_at, notes, created_at FROM booking WHERE room_id = $1 ORDER BY start_at",
     )
     .bind(id)
     .fetch_all(&state.db)
@@ -137,8 +137,8 @@ pub async fn all_calendar(
 ) -> ApiResult<IcalResponse> {
     let bookings = sqlx::query_as::<_, BookingWithRoomRow>(
         "SELECT b.id, b.title, r.name AS room_name, b.start_at, b.end_at, b.notes, b.created_at \
-         FROM portal_room_booking b \
-         JOIN portal_room r ON r.id = b.room_id \
+         FROM booking b \
+         JOIN room r ON r.id = b.room_id \
          ORDER BY b.start_at",
     )
     .fetch_all(&state.db)

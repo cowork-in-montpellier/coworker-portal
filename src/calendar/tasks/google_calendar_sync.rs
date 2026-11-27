@@ -71,8 +71,8 @@ pub async fn run(state: &State, ical_url: &str, room_id: i32) {
         }
 
         let result = sqlx::query(
-            "INSERT INTO portal_room_booking (room_id, title, start_at, end_at, notes, google_uid) \
-             VALUES ($1, $2, $3, $4, $5, $6) \
+            "INSERT INTO booking (room_id, title, start_at, end_at, notes, google_uid, created_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7) \
              ON CONFLICT (google_uid) DO NOTHING",
         )
         .bind(room_id)
@@ -81,6 +81,7 @@ pub async fn run(state: &State, ical_url: &str, room_id: i32) {
         .bind(end)
         .bind(&notes)
         .bind(&uid)
+        .bind(Utc::now())
         .execute(&state.db)
         .await;
 

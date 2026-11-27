@@ -7,7 +7,8 @@ use super::config::Config;
 
 #[derive(Clone)]
 pub struct State {
-    pub db: sqlx::PgPool,
+    /// The calendar's own SQLite database, apart from the billing one and from SUTOM's.
+    pub db: sqlx::SqlitePool,
     pub jwt: Arc<JwtService>,
     pub config: Arc<Config>,
 }

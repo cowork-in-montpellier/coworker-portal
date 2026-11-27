@@ -12,7 +12,7 @@ implements, its adapters, and its references to other modules.
 |---|---|---|---|---|
 | [`users`](#module-users) | `User`, invitations, password reset | — | `auth::HasJwt`, `auth::CurrentUser` (shared auth contract) | `invoice::ports::BillingDirectory` via `users::adapters::PgBillingDirectory`, `sutom::ports::PlayerDirectory` via `users::adapters::PgPlayerDirectory` |
 | [`invoice`](#module-invoice) | `Service`, `Bill`, `Voucher`, `VoucherSpec`, `VoucherStatus` | `users::auth::{HasJwt, CurrentUser}` | `ports::BillingDirectory` | — |
-| [`calendar`](#module-calendar) | `Room`, `Booking` | `users::auth::{HasJwt, CurrentUser}` | — | — |
+| [`calendar`](#module-calendar) | `Room`, `Booking` (own SQLite database) | `users::auth::{HasJwt, CurrentUser}` | — | — |
 | [`sutom`](#module-sutom) | `DailyWord`, `Attempt`, `LetterStatus`, par & leaderboard points (own SQLite database) | `users::auth::{HasJwt, CurrentUser}` | `ports::PlayerDirectory` | — |
 
 There is no direct coupling between `invoice`, `calendar` and `sutom`.
@@ -23,6 +23,7 @@ Lives at the crate root, not owned by any single module:
 
 - `src/error.rs` — `AppError` (`Database`, `Internal`, `External`, `NotFound`, `Unauthorized`, `BadRequest`), the shared error/response type used across modules.
 - `src/config.rs` — `InfraConfig`: `DATABASE_URL`, `LISTEN_ADDR`, TLS cert/key paths. The only genuinely cross-module env vars.
+- `src/sqlite.rs` — opens a module's own SQLite database (file and directory created on first use, WAL, foreign keys on). Used by `sutom` and `calendar`, each with its own file and its own migrations.
 - `src/openapi.rs` — top-level `ApiDoc`, merged at startup with each module's own `openapi::ApiDoc`.
 - `src/main.rs` — composition root: connects the shared `PgPool`, runs migrations, builds the shared `JwtService`, constructs each module's `State`, wires cross-module adapters (e.g. `PgBillingDirectory` into `invoice::State`), registers background tasks, and mounts each module's router.
 
@@ -663,35 +664,53 @@ implements anything for `calendar`.
   `GOOGLE_CALDAV_ENABLED=true` and the `google_caldav_*` config is set.
 - **`calendar::tasks::google_calendar_sync`** — background task that pulls a Google
   Calendar iCal feed (`GOOGLE_CALENDAR_ICAL_URL`) and inserts new events into
-  `portal_room_booking` (`ON CONFLICT (google_uid) DO NOTHING`), for the room configured
+  `booking` (`ON CONFLICT (google_uid) DO NOTHING`), for the room configured
   via `GOOGLE_CALENDAR_ROOM_ID`. Runs once at startup and then on
   `GOOGLE_CALENDAR_SYNC_CRON` (default `0 */15 * * * *`).
 
-### Postgres
+### SQLite
 
-This app owns the schema and data for:
+`calendar` has its own SQLite database, apart from the billing PostgreSQL one and from
+SUTOM's, so bookings never touch billing data. It is opened by `calendar::db::connect` from
+`CALENDAR_DATABASE_URL` (default `sqlite:data/calendar.db`; in production
+`/var/lib/coworker-portal/calendar.db`, see the systemd unit), created on first start, and
+migrated from `migrations_calendar/`.
 
-**`portal_room`** → `Room`
+Instants are stored as RFC 3339 UTC text, so range and overlap queries compare them as
+strings. `AUTOINCREMENT` keeps ids from ever being reused: a booking's id is its UID
+(`booking-{id}`) in the published iCalendar feeds.
+
+**`room`** → `Room`
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | SERIAL PK | |
-| `name` | varchar(100) | |
-| `color` | varchar(7) | hex color, default `#3b82f6` |
+| `id` | INTEGER PK AUTOINCREMENT | |
+| `name` | TEXT | |
+| `color` | TEXT | hex color, default `#3b82f6` |
 
-**`portal_room_booking`** → `Booking`
+**`booking`** → `Booking`
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | SERIAL PK | |
-| `room_id` | int4 | FK → portal_room.id, cascade delete |
-| `title` | varchar(200) | |
-| `start_at` | timestamptz | |
-| `end_at` | timestamptz | CHECK `end_at > start_at` |
-| `created_by` | int4 nullable | FK → auth_user.id, cascade delete; null for Google-synced events |
-| `notes` | text | default `''` |
-| `created_at` | timestamptz | default `NOW()` |
-| `google_uid` | text nullable, unique | CalDAV/iCal event UID, used as sync key |
+| `id` | INTEGER PK AUTOINCREMENT | |
+| `room_id` | INTEGER | FK → `room.id`, cascade delete |
+| `title` | TEXT | |
+| `start_at` | TEXT | |
+| `end_at` | TEXT | CHECK `end_at > start_at` |
+| `created_by` | INTEGER nullable | `auth_user.id` in the main database (no foreign key across databases); null for Google-synced events |
+| `notes` | TEXT | default `''` |
+| `created_at` | TEXT | set by the app on insert |
+| `google_uid` | TEXT nullable, unique | CalDAV/iCal event UID, used as sync key |
 
 Indexes: `(room_id, start_at, end_at)` and `(start_at, end_at)` for range/overlap queries.
+
+#### Move from PostgreSQL
+
+Rooms and bookings used to live in the shared PostgreSQL database (`portal_room`,
+`portal_room_booking`, migrations `0010`, `0011`, `0018`). At startup,
+`calendar::legacy_import` copies them once, ids included, into the SQLite database while it
+has no rooms yet, in a single transaction. The old tables and migrations are kept for now;
+once every environment has moved, a PostgreSQL migration can drop the tables and
+`legacy_import` can go. Rooms then need seeding by a `migrations_calendar/` migration, since
+they are only created by the old PostgreSQL migrations today.
 
 ### Features
 
@@ -720,7 +739,8 @@ Both feeds set `Last-Modified` from the most recent `created_at` among included 
 |----------|---------|-------------|
 | `GOOGLE_CALENDAR_ICAL_URL` | _(unset)_ | iCal feed URL to sync from; sync task disabled if unset |
 | `GOOGLE_CALENDAR_SYNC_CRON` | `0 */15 * * * *` | 6-field cron expression for the iCal sync task |
-| `GOOGLE_CALENDAR_ROOM_ID` | `1` | `portal_room.id` that synced events are attached to |
+| `CALENDAR_DATABASE_URL` | `sqlite:data/calendar.db` | the calendar's own SQLite database |
+| `GOOGLE_CALENDAR_ROOM_ID` | `1` | `room.id` that synced events are attached to |
 | `GOOGLE_CALDAV_ENABLED` | `false` | enable two-way sync of bookings created in this app to Google Calendar |
 | `GOOGLE_CALDAV_EMAIL` | _(unset)_ | Google account email for CalDAV basic auth |
 | `GOOGLE_CALDAV_PASSWORD` | _(unset)_ | Google account app password for CalDAV basic auth |

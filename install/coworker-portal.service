@@ -10,10 +10,12 @@ Type=simple
 # the files with appropriate permissions — but that requires coordinating with the
 # cert renewal setup which is out of scope for now.
 WorkingDirectory=/opt/coworker-portal
-# SUTOM's SQLite database lives in /var/lib/coworker-portal, created by systemd and kept
-# across deploys (unlike the install directory). /etc/coworker-portal/env can override it.
+# The SUTOM and calendar SQLite databases live in /var/lib/coworker-portal, created by
+# systemd and kept across deploys (unlike the install directory). /etc/coworker-portal/env
+# can override them.
 StateDirectory=coworker-portal
 Environment=SUTOM_DATABASE_URL=sqlite:/var/lib/coworker-portal/sutom.db
+Environment=CALENDAR_DATABASE_URL=sqlite:/var/lib/coworker-portal/calendar.db
 EnvironmentFile=/etc/coworker-portal/env
 ExecStart=/opt/coworker-portal/coworker-portal
 Restart=on-failure

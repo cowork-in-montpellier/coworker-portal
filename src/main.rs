@@ -14,6 +14,7 @@ mod config;
 mod error;
 mod invoice;
 mod openapi;
+mod sqlite;
 mod sutom;
 mod users;
 
@@ -103,8 +104,11 @@ async fn main() -> Result<()> {
         smtp: users_config.smtp.clone(),
     };
 
+    let calendar_db = calendar::db::connect(&calendar_config.database_url).await?;
+    calendar::legacy_import::run(&db, &calendar_db).await.context("copying calendar data from PostgreSQL")?;
+
     let calendar_state = calendar::State {
-        db: db.clone(),
+        db: calendar_db,
         jwt: jwt.clone(),
         config: Arc::new(calendar_config),
     };
