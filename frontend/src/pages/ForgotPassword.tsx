@@ -27,9 +27,9 @@ export function ForgotPassword() {
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
       <div className="flex-1 flex items-center justify-center p-4">
-        <div className="card bg-base-100 shadow-md w-full max-w-sm">
+        <div className="card cw-card w-full max-w-sm">
           <div className="card-body gap-4">
-            <h2 className="card-title text-base">Mot de passe oublié</h2>
+            <h2 className="card-title cw-subtitle">Mot de passe oublié</h2>
 
             {sent ? (
               <div className="flex flex-col gap-4">

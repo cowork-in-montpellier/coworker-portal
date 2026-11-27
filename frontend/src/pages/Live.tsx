@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { type ConnectedGuestsResponse, fetchConnected } from '../api/connected'
 import { fetchOccupancy, type OccupancyResponse, type OccupancySlot } from '../api/occupancy'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 
 // ── Heatmap helpers ───────────────────────────────────────────────────────────
 
@@ -32,7 +33,8 @@ function cellColor(value: number, max: number): string {
   if (max === 0 || value === 0) return 'transparent'
   const ratio = value / max
   const lightness = Math.round(80 - ratio * 50)
-  return `hsl(221 83% ${lightness}%)`
+  // Shades of the Cowork'in blue (#35a8e0, hue 200°).
+  return `hsl(200 73% ${lightness}%)`
 }
 
 function HeatmapCell({ slot, maxValue, liveCount }: {
@@ -101,13 +103,13 @@ export function Live() {
       <Navbar />
 
       <main className="flex-1 p-4 md:p-8 max-w-6xl mx-auto w-full flex flex-col gap-6">
-        <h2 className="text-xl font-bold">Le cowo en temps réel</h2>
+        <PageHeader title="Le cowo en temps réel" className="mb-2" />
 
         {/* Connected now */}
-        <div className="card bg-base-100 shadow-sm">
+        <div className="card cw-card">
           <div className="card-body p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-sm">Connectés en ce moment</h3>
+              <h2 className="cw-subtitle">Connectés en ce moment</h2>
               {connectedLoading && <span className="loading loading-spinner loading-xs text-base-content/40" />}
             </div>
 
@@ -150,11 +152,11 @@ export function Live() {
         </div>
 
         {/* Occupancy heatmap */}
-        <div className="card bg-base-100 shadow-sm overflow-x-auto">
-          <div className="card-body p-4 md:p-6">
-            <div className="flex items-center justify-between mb-4">
+        <div className="card cw-card">
+          <div className="card-body p-3 sm:p-4 md:p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
               <div>
-                <h3 className="font-semibold text-sm">Occupation — semaine en cours</h3>
+                <h2 className="cw-subtitle">Occupation de la semaine</h2>
                 <p className="text-xs text-base-content/40 mt-0.5">
                   Vouchers connectés par créneau cette semaine (lun–ven)
                 </p>
@@ -170,10 +172,7 @@ export function Live() {
 
             {!occupancyLoading && occupancy !== null && occupancy.slots.length > 0 && (
               <>
-                <div
-                  className="grid gap-1 min-w-[28rem]"
-                  style={{ gridTemplateColumns: '3.5rem repeat(5, 1fr)' }}
-                >
+                <div className="grid gap-1 grid-cols-[2.25rem_repeat(5,minmax(0,1fr))] sm:grid-cols-[3.5rem_repeat(5,minmax(0,1fr))]">
                   {/* Header */}
                   <div />
                   {DAYS.map(d => (
@@ -184,8 +183,8 @@ export function Live() {
 
                   {/* Rows */}
                   {HOURS.map(hour => (
-                    <>
-                      <div key={`label-${hour}`} className="flex items-center justify-end pr-2">
+                    <Fragment key={hour}>
+                      <div className="flex items-center justify-end pr-1 sm:pr-2">
                         <span className="text-xs text-base-content/40 whitespace-nowrap">{hour}h</span>
                       </div>
                       {DAY_NUMBERS.map(day => (
@@ -200,12 +199,12 @@ export function Live() {
                           }
                         />
                       ))}
-                    </>
+                    </Fragment>
                   ))}
                 </div>
 
                 {/* Legend */}
-                <div className="flex items-center gap-3 mt-4 pt-3 border-t border-base-200">
+                <div className="flex flex-wrap items-center gap-3 mt-4 pt-3 border-t border-base-200">
                   <span className="text-xs text-base-content/40">Calme</span>
                   <div className="flex gap-0.5 flex-1 max-w-28">
                     {[0.1, 0.3, 0.5, 0.7, 0.9].map(r => (

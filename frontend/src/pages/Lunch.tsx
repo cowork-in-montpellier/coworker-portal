@@ -23,6 +23,7 @@ import {
 } from '../api/lunch'
 import { getTokenPayload } from '../auth'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 import { CUISINE_ICONS, cuisineIcon } from '../lib/cuisineIcons'
 import { useToast } from '../lib/toast'
 import '../styles/lunch.css'
@@ -185,16 +186,6 @@ function Cover({ cuisine, description }: { cuisine: string; description: string 
         <path d={icon.path} />
       </svg>
       {description && <p className="lunch-description">{description}</p>}
-    </div>
-  )
-}
-
-function SectionHeading({ title, lede }: { title: string; lede?: ReactNode }) {
-  return (
-    <div className="flex flex-col items-center gap-4 text-center">
-      <h1 className="lunch-title">{title}</h1>
-      <div className="lunch-rule" aria-hidden="true" />
-      {lede && <p className="font-bold text-base-content/75">{lede}</p>}
     </div>
   )
 }
@@ -586,7 +577,7 @@ export function Lunch() {
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
       <main className="lunch flex-1 px-4 py-8 md:px-8 max-w-6xl mx-auto w-full flex flex-col gap-8">
-        <SectionHeading
+        <PageHeader
           title="Pause-déj"
           lede={<>On mange où ce midi ?{dateLabel && <span className="font-normal"> · {dateLabel}</span>}</>}
         />
@@ -611,7 +602,7 @@ export function Lunch() {
             {/* Who goes where today */}
             <section className="lunch-card p-4 md:p-6 flex flex-col gap-4" aria-labelledby="lunch-today">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 id="lunch-today" className="lunch-subtitle">
+                <h2 id="lunch-today" className="cw-subtitle">
                   Ce midi
                 </h2>
                 {myPlace ? (
@@ -767,7 +758,7 @@ export function Lunch() {
       {/* Create / edit */}
       <dialog className={`modal ${editing ? 'modal-open' : ''}`} aria-labelledby="lunch-form-title">
         <div className="modal-box lunch">
-          <h3 id="lunch-form-title" className="lunch-subtitle mb-4">
+          <h3 id="lunch-form-title" className="cw-subtitle mb-4">
             {editing === 'new' ? 'Un nouvel endroit' : 'Modifier la fiche'}
           </h3>
           <form onSubmit={submitForm} className="flex flex-col gap-4" noValidate>
@@ -896,7 +887,7 @@ export function Lunch() {
       {/* Delete confirmation */}
       <dialog className={`modal ${deleting ? 'modal-open' : ''}`} aria-labelledby="lunch-delete-title">
         <div className="modal-box lunch">
-          <h3 id="lunch-delete-title" className="lunch-subtitle mb-2">
+          <h3 id="lunch-delete-title" className="cw-subtitle mb-2">
             Supprimer « {deleting?.name} » ?
           </h3>
           <p className="text-sm text-base-content/80">

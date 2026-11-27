@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 import { sendInvitation } from '../api/invitations'
 import { ApiError } from '../api/client'
 import { useToast } from '../lib/toast'
@@ -32,12 +32,9 @@ export function InviteMember() {
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
       <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
-        <div className="mb-6 flex items-center gap-3">
-          <Link to="/dashboard" className="btn btn-ghost btn-sm">← Retour</Link>
-          <h2 className="text-xl font-bold">Inviter un membre</h2>
-        </div>
+        <PageHeader title="Inviter un membre" back={{ to: '/dashboard' }} className="mb-8" />
 
-        <div className="card bg-base-100 shadow-sm">
+        <div className="card cw-card">
           <div className="card-body gap-4">
             {sentTo ? (
               <div className="flex flex-col gap-4">

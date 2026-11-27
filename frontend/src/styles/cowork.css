@@ -1,0 +1,100 @@
+/* The Cowork'in design system, shared by every page: Museo titles under a blue rule, one blue
+   accent, cards separated by 2px borders rather than shadows, pill-shaped actions. */
+
+@font-face {
+  font-family: 'Museo';
+  src: url('/fonts/Museo500-Regular.otf') format('opentype');
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Museo';
+  src: url('/fonts/Museo700-Regular.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  /* Brand blue, decorative fills only (the rule under titles). */
+  --cw-primary: #35a8e0;
+  /* Blue for text, icons and filled buttons: 5.64:1 on white. */
+  --cw-blue: #176e98;
+  --cw-blue-hover: #125a7c;
+  --cw-on-blue: #ffffff;
+  /* Light tint behind selected chips and highlighted cards. */
+  --cw-blue-soft: #e6f4fb;
+  --cw-display: Museo, 'Playfair Display', serif;
+}
+
+/* Dark portal theme: lighter blue for text, darker fills, so both keep AA contrast. */
+[data-theme='dim'] {
+  --cw-blue: #8dceee;
+  --cw-blue-hover: #b5e0f5;
+  --cw-on-blue: #0f2a38;
+  --cw-blue-soft: rgba(53, 168, 224, 0.16);
+}
+
+/* Components sit in a layer, so Tailwind utilities can still adjust them (e.g. a smaller title). */
+@layer components {
+  /* Page title (see PageHeader). */
+  .cw-title {
+    font-family: var(--cw-display);
+    font-weight: 700;
+    font-size: 30px;
+    line-height: 1.1;
+  }
+
+  @media (min-width: 768px) {
+    .cw-title {
+      font-size: 36px;
+    }
+  }
+
+  /* The 96 × 8 px blue rule under every page title. */
+  .cw-rule {
+    width: 96px;
+    height: 8px;
+    background: var(--cw-primary);
+  }
+
+  /* Section and card titles. */
+  .cw-subtitle {
+    font-family: var(--cw-display);
+    font-weight: 700;
+    font-size: 20px;
+    line-height: 28px;
+  }
+
+  /* A card: separated by its border, never by a shadow. */
+  .cw-card {
+    background: var(--color-base-100);
+    border: 2px solid var(--color-base-300);
+    border-radius: 8px;
+    box-shadow: none;
+  }
+
+  .cw-blue {
+    color: var(--cw-blue);
+  }
+}
+
+/* Actions are pills; buttons inside a `join` keep their joined corners, and keys of a virtual
+   keyboard (`cw-key`) keep daisyUI's own radius. Unlayered, so it wins over daisyUI's radius. */
+.btn:not(.join-item):not(.btn-circle):not(.btn-square):not(.cw-key) {
+  border-radius: 9999px;
+}
+
+/* Keyboard focus: 2px of the background, then 2px of blue, following the rounding. */
+:where(button, a, input, select, textarea, summary, [role='button']):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--color-base-100),
+    0 0 0 4px var(--cw-blue);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

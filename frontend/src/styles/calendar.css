@@ -160,3 +160,26 @@
 .rbc-agenda-view table.rbc-agenda-table tbody > tr:hover td {
   background-color: var(--color-base-200);
 }
+
+/* Phones: the toolbar stacks, the period's label first and in bold. */
+@media (max-width: 767px) {
+  .rbc-toolbar {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .rbc-toolbar .rbc-toolbar-label {
+    order: -1;
+    font-weight: 700;
+    padding: 0;
+  }
+
+  .rbc-toolbar .rbc-btn-group {
+    display: flex;
+    width: 100%;
+  }
+
+  .rbc-toolbar .rbc-btn-group button {
+    flex: 1;
+  }
+}

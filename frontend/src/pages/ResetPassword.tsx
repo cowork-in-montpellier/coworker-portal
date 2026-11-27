@@ -53,9 +53,9 @@ export function ResetPassword() {
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
       <div className="flex-1 flex items-center justify-center p-4">
-        <div className="card bg-base-100 shadow-md w-full max-w-sm">
+        <div className="card cw-card w-full max-w-sm">
           <div className="card-body gap-4">
-            <h2 className="card-title text-base">Nouveau mot de passe</h2>
+            <h2 className="card-title cw-subtitle">Nouveau mot de passe</h2>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="form-control">
                 <label className="label"><span className="label-text">Nouveau mot de passe</span></label>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 import {
   type GuestBillResponse,
   checkGuestVouchers,
@@ -119,15 +120,14 @@ export function GuestSummary() {
       <Navbar />
 
       <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
-        <div className="mb-6">
-          <h2 className="text-xl font-bold">Achat confirmé</h2>
-          <p className="text-sm text-base-content/50 mt-1">
-            Conservez cette page ou notez vos codes — elle n'est accessible que via ce lien.
-          </p>
-        </div>
+        <PageHeader
+          title="Achat confirmé"
+          lede="Conserve cette page ou note tes codes : elle n'est accessible que par ce lien."
+          className="mb-8"
+        />
 
         {/* Bill summary card */}
-        <div className="card bg-base-100 shadow-sm mb-4">
+        <div className="card cw-card mb-4">
           <div className="card-body p-4 gap-2">
             <div className="flex items-start justify-between">
               <div>
@@ -160,7 +160,7 @@ export function GuestSummary() {
         </div>
 
         {/* Vouchers */}
-        <div className="card bg-base-100 shadow-sm">
+        <div className="card cw-card">
           <div className="card-body p-4">
             <div className="flex items-center gap-2 mb-4">
               <span className="text-xs text-base-content/40 font-medium uppercase tracking-wide">
@@ -197,7 +197,7 @@ export function GuestSummary() {
                 return (
                   <div
                     key={v.unify_id}
-                    className={`card border shadow-sm w-44 transition-opacity ${
+                    className={`card border-2 w-44 transition-opacity ${
                       isExpired
                         ? 'bg-base-200 border-base-300 opacity-40'
                         : 'bg-base-100 border-base-300'

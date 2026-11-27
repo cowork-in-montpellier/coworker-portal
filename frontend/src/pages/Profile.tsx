@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 import { type Profile, changePassword, getProfile, updateProfile } from '../api/profile'
 import { ApiError } from '../api/client'
 import { useToast } from '../lib/toast'
@@ -92,10 +92,7 @@ export function Profile() {
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
       <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
-        <div className="mb-6 flex items-center gap-3">
-          <Link to="/dashboard" className="btn btn-ghost btn-sm">← Retour</Link>
-          <h2 className="text-xl font-bold">Mon profil</h2>
-        </div>
+        <PageHeader title="Mon profil" className="mb-8" />
 
         {loading ? (
           <div className="flex justify-center py-12">
@@ -103,9 +100,9 @@ export function Profile() {
           </div>
         ) : (
           <div className="flex flex-col gap-6">
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card cw-card">
               <div className="card-body">
-                <h3 className="card-title text-base">Informations personnelles</h3>
+                <h3 className="card-title cw-subtitle">Informations personnelles</h3>
                 {profile && (
                   <p className="text-sm text-base-content/50 mb-2 font-mono">{profile.username}</p>
                 )}
@@ -155,14 +152,14 @@ export function Profile() {
                     />
                   </div>
                   <div className="form-control">
-                    <label className="label cursor-pointer justify-start gap-3">
+                    <label className="label cursor-pointer justify-start items-start gap-3 whitespace-normal">
                       <input
                         type="checkbox"
-                        className="toggle toggle-sm"
+                        className="toggle toggle-sm shrink-0"
                         checked={onsitePayment}
                         onChange={e => setOnsitePayment(e.target.checked)}
                       />
-                      <div>
+                      <div className="min-w-0">
                         <span className="label-text">Paiement sur place</span>
                         <p className="text-xs text-base-content/40 mt-0.5">Vous savez faire payer via le lecteur de carte SumUp une facture</p>
                       </div>
@@ -179,9 +176,9 @@ export function Profile() {
               </div>
             </div>
 
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card cw-card">
               <div className="card-body">
-                <h3 className="card-title text-base">Changer de mot de passe</h3>
+                <h3 className="card-title cw-subtitle">Changer de mot de passe</h3>
                 <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
                   <div className="form-control">
                     <label className="label"><span className="label-text">Mot de passe actuel</span></label>

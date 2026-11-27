@@ -5,6 +5,8 @@ import { Calendar, type EventProps, type SlotInfo, dateFnsLocalizer } from 'reac
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 import '../styles/calendar.css'
 import { Navbar } from '../components/Navbar'
+import { useIsMobile } from '../hooks/useMediaQuery'
+import { PageHeader } from '../components/PageHeader'
 import { useToast } from '../lib/toast'
 import {
   type Booking,
@@ -249,6 +251,9 @@ export function CalendarPage() {
     [rooms],
   )
 
+  // A week doesn't fit on a phone: show one day at a time, or the agenda.
+  const isMobile = useIsMobile()
+
   const selectedRoom = selectedBooking ? rooms.find(r => r.id === selectedBooking.room_id) : null
   const baseUrl = window.location.origin
 
@@ -256,15 +261,18 @@ export function CalendarPage() {
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
       <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full flex flex-col gap-6">
-        <h1 className="text-2xl font-bold">Réservation des salles</h1>
+        <PageHeader title="Réservation des salles" className="mb-2" />
 
-        <div className="card bg-base-100 shadow-sm">
-          <div className="card-body p-4">
+        <div className="card cw-card">
+          <div className="card-body p-2 sm:p-4">
             <Calendar
+              key={isMobile ? 'mobile' : 'desktop'}
               localizer={localizer}
               culture="fr"
               events={events}
-              defaultView="week"
+              defaultView={isMobile ? 'day' : 'week'}
+              views={isMobile ? ['day', 'agenda'] : ['month', 'week', 'day', 'agenda']}
+              longPressThreshold={250}
               min={MIN_TIME}
               max={MAX_TIME}
               scrollToTime={new Date()}
@@ -274,7 +282,7 @@ export function CalendarPage() {
               onRangeChange={handleRangeChange}
               eventPropGetter={eventPropGetter as (event: object) => object}
               components={{ agenda: { event: AgendaEvent as React.ComponentType<EventProps<object>> } }}
-              style={{ height: 600 }}
+              style={{ height: isMobile ? 560 : 600 }}
               formats={{
                 dayFormat: (date, culture, localizer) =>
                   localizer?.format(date, 'EEEE d', culture) ?? '',
@@ -306,9 +314,9 @@ export function CalendarPage() {
           </div>
         </div>
 
-        <div className="card bg-base-100 shadow-sm">
+        <div className="card cw-card">
           <div className="card-body p-4">
-            <h2 className="card-title text-base">Liens iCalendar</h2>
+            <h2 className="card-title cw-subtitle">Liens iCalendar</h2>
             <p className="text-sm text-base-content/60 mb-3">
               Abonnez-vous à ces liens dans Google Calendar, Outlook ou Zimbra pour voir les réservations en temps réel.
             </p>
@@ -316,13 +324,15 @@ export function CalendarPage() {
               {rooms.map(room => {
                 const url = `${baseUrl}/api/rooms/${room.id}/calendar.ics`
                 return (
-                  <div key={room.id} className="flex items-center gap-3">
+                  <div key={room.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span
                       className="inline-block w-3 h-3 rounded-full flex-shrink-0"
                       style={{ backgroundColor: room.color }}
                     />
-                    <span className="text-sm font-medium w-40 flex-shrink-0">{room.name}</span>
-                    <code className="text-xs bg-base-200 px-2 py-1 rounded flex-1 truncate">{url}</code>
+                    <span className="text-sm font-medium flex-1 sm:flex-none sm:w-40 flex-shrink-0">{room.name}</span>
+                    <code className="text-xs bg-base-200 px-2 py-1 rounded order-last w-full sm:order-none sm:w-auto sm:flex-1 truncate">
+                      {url}
+                    </code>
                     <button
                       className="btn btn-xs btn-ghost"
                       onClick={() => handleCopy(room.id, url)}
@@ -332,10 +342,12 @@ export function CalendarPage() {
                   </div>
                 )
               })}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="inline-block w-3 h-3 rounded-full flex-shrink-0 bg-base-content/30" />
-                <span className="text-sm font-medium w-40 flex-shrink-0">Toutes les salles</span>
-                <code className="text-xs bg-base-200 px-2 py-1 rounded flex-1 truncate">{`${baseUrl}/api/calendar.ics`}</code>
+                <span className="text-sm font-medium flex-1 sm:flex-none sm:w-40 flex-shrink-0">Toutes les salles</span>
+                <code className="text-xs bg-base-200 px-2 py-1 rounded order-last w-full sm:order-none sm:w-auto sm:flex-1 truncate">
+                  {`${baseUrl}/api/calendar.ics`}
+                </code>
                 <button
                   className="btn btn-xs btn-ghost"
                   onClick={() => handleCopy('all', `${baseUrl}/api/calendar.ics`)}
@@ -351,7 +363,7 @@ export function CalendarPage() {
       {/* Create booking modal */}
       <dialog className={`modal ${createOpen ? 'modal-open' : ''}`}>
         <div className="modal-box">
-          <h3 className="font-bold text-lg mb-4">Nouvelle réservation</h3>
+          <h3 className="cw-subtitle mb-4">Nouvelle réservation</h3>
           <form onSubmit={handleCreate} className="flex flex-col gap-4">
             <div className="form-control">
               <label className="label">
@@ -442,7 +454,7 @@ export function CalendarPage() {
       {/* Booking detail / delete modal */}
       <dialog className={`modal ${selectedBooking !== null ? 'modal-open' : ''}`}>
         <div className="modal-box">
-          <h3 className="font-bold text-lg mb-4">Réservation</h3>
+          <h3 className="cw-subtitle mb-4">Réservation</h3>
           {selectedBooking && (
             <div className="flex flex-col gap-2 text-sm">
               <div><span className="font-medium">Titre :</span> {selectedBooking.title}</div>
