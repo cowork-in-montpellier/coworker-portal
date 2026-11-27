@@ -1,3 +1,4 @@
+import { apiFetch } from './client'
 import { z } from 'zod'
 
 const OccupancySlotSchema = z.object({
@@ -15,7 +16,6 @@ export type OccupancySlot = z.infer<typeof OccupancySlotSchema>
 export type OccupancyResponse = z.infer<typeof OccupancyResponseSchema>
 
 export async function fetchOccupancy(): Promise<OccupancyResponse> {
-  const res = await fetch('/api/occupancy')
-  if (!res.ok) throw new Error(`API error ${res.status}`)
-  return OccupancyResponseSchema.parse(await res.json())
+  const raw = await apiFetch<unknown>('/api/occupancy')
+  return OccupancyResponseSchema.parse(raw)
 }

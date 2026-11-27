@@ -1,4 +1,5 @@
 use axum::{Json, extract::{Path, State}, response::IntoResponse};
+use crate::users::auth::CurrentUser;
 use chrono::Utc;
 use icalendar::{Calendar, Component, Event, EventLike};
 use serde::Serialize;
@@ -58,12 +59,15 @@ struct BookingWithRoomRow {
     get,
     path = "/rooms",
     tag = "Rooms",
+    security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "List of rooms", body = Vec<RoomResponse>),
+        (status = 401, description = "Unauthorized"),
     )
 )]
 pub async fn list_rooms(
     State(state): State<CalendarState>,
+    _user: CurrentUser,
 ) -> ApiResult<Json<Vec<RoomResponse>>> {
     let rooms = sqlx::query_as::<_, RoomResponse>(
         "SELECT id, name, color FROM room ORDER BY id",

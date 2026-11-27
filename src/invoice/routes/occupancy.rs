@@ -1,4 +1,5 @@
 use axum::{Json, extract::State};
+use crate::users::auth::CurrentUser;
 use serde::Serialize;
 use sqlx::FromRow;
 use utoipa::ToSchema;
@@ -32,12 +33,15 @@ struct OccupancyRow {
     get,
     path = "/occupancy",
     tag = "Occupancy",
+    security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Hourly occupancy for the current week", body = OccupancyResponse),
+        (status = 401, description = "Unauthorized"),
     )
 )]
 pub async fn get_occupancy(
     State(state): State<InvoiceState>,
+    _user: CurrentUser,
 ) -> Result<Json<OccupancyResponse>, AppError> {
     let rows = sqlx::query_as::<_, OccupancyRow>(
         r#"

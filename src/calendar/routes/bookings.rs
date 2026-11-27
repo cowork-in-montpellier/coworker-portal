@@ -45,16 +45,19 @@ pub struct ListBookingsQuery {
     get,
     path = "/bookings",
     tag = "Bookings",
+    security(("bearer_auth" = [])),
     params(
         ("start" = String, Query, description = "Range start (ISO 8601)"),
         ("end" = String, Query, description = "Range end (ISO 8601)"),
     ),
     responses(
         (status = 200, description = "Bookings in range", body = Vec<BookingResponse>),
+        (status = 401, description = "Unauthorized"),
     )
 )]
 pub async fn list_bookings(
     State(state): State<CalendarState>,
+    _user: CurrentUser,
     Query(params): Query<ListBookingsQuery>,
 ) -> ApiResult<Json<Vec<BookingResponse>>> {
     let bookings = sqlx::query_as::<_, BookingResponse>(
@@ -236,23 +239,25 @@ mod tests {
         }
     }
 
+    fn alice() -> CurrentUser {
+        CurrentUser { id: 7, first_name: "Alice".into() }
+    }
+
     fn at(hour: u32, min: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 12, 1, hour, min, 0).unwrap()
     }
 
     async fn book(state: &CalendarState, start: DateTime<Utc>, end: DateTime<Utc>) -> ApiResult<i32> {
         let request = CreateBookingRequest { room_id: 1, title: "Réunion".into(), start_at: start, end_at: end, notes: None };
-        let user = CurrentUser { id: 7, first_name: "Alice".into() };
-        create_booking(State(state.clone()), user, Json(request)).await.map(|(_, Json(b))| b.id)
+        create_booking(State(state.clone()), alice(), Json(request)).await.map(|(_, Json(b))| b.id)
     }
 
     async fn delete(state: &CalendarState, id: i32) {
-        let user = CurrentUser { id: 7, first_name: "Alice".into() };
-        let _ = delete_booking(State(state.clone()), user, Path(id)).await.unwrap();
+        let _ = delete_booking(State(state.clone()), alice(), Path(id)).await.unwrap();
     }
 
     async fn listed(state: &CalendarState, start: DateTime<Utc>, end: DateTime<Utc>) -> Vec<i32> {
-        let Json(bookings) = list_bookings(State(state.clone()), Query(ListBookingsQuery { start, end })).await.unwrap();
+        let Json(bookings) = list_bookings(State(state.clone()), alice(), Query(ListBookingsQuery { start, end })).await.unwrap();
         bookings.into_iter().map(|b| b.id).collect()
     }
 

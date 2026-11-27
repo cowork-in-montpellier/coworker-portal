@@ -46,8 +46,8 @@ function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/invite" element={<ProtectedRoute><InviteMember /></ProtectedRoute>} />
         <Route path="/accept-invite" element={<AcceptInvite />} />
-        <Route path="/calendar" element={<CalendarPage />} />
-        <Route path="/live" element={<Live />} />
+        <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+        <Route path="/live" element={<ProtectedRoute><Live /></ProtectedRoute>} />
         <Route path="/sutom" element={<ProtectedRoute><Sutom /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>

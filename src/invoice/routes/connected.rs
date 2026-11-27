@@ -1,4 +1,5 @@
 use axum::extract::State;
+use crate::users::auth::CurrentUser;
 use axum::Json;
 use serde::Serialize;
 use sqlx::FromRow;
@@ -38,12 +39,15 @@ struct VoucherOwnerRow {
     get,
     path = "/connected",
     tag = "Vouchers",
+    security(("bearer_auth" = [])),
     responses(
         (status = 200, description = "Currently connected guests", body = ConnectedGuestsResponse),
+        (status = 401, description = "Unauthorized"),
     )
 )]
 pub async fn connected_guests(
     State(state): State<InvoiceState>,
+    _user: CurrentUser,
 ) -> Result<Json<ConnectedGuestsResponse>, AppError> {
     let active = state.unify.get_active_guests().await
         .map_err(|e| AppError::External(e.to_string()))?;
