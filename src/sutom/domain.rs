@@ -9,6 +9,11 @@ pub const MAX_ATTEMPTS: usize = 6;
 /// Score recorded when a player uses all attempts without finding the word.
 pub const FAILED_SCORE: i32 = MAX_ATTEMPTS as i32 + 1;
 
+/// The emotes a player can pick to react to their finished game of the day.
+pub const REACTIONS: [&str; 15] = [
+    "🥳", "😎", "😃", "🤣", "😛", "🙄", "😮", "🥱", "🥵", "🤯", "🥴", "😥", "😡", "🤫", "😬",
+];
+
 /// Strips French accents and uppercases, mirroring the source site's own
 /// word normalization (`nettoyerMot`) so stored words match its dictionaries.
 pub fn clean_word(raw: &str) -> String {

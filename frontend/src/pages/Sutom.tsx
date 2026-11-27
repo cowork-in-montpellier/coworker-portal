@@ -7,6 +7,8 @@ import {
   fetchLeaderboard,
   fetchScoreboard,
   fetchToday,
+  REACTIONS,
+  setReaction,
   submitGuesses,
   type Day,
   type History,
@@ -200,9 +202,22 @@ function buildShareText(puzzleNumber: number, target: string, guesses: string[],
 // Golf-style badge for a score relative to par: eagle (2 under) beats birdie (1 under).
 function golfBadge(par: number | null, score: number | null): { emoji: string; title: string } | null {
   if (par == null || score == null) return null
-  if (score <= par - 2) return { emoji: '🦅', title: 'Eagle' }
-  if (score === par - 1) return { emoji: '🐦', title: 'Birdie' }
+  if (score <= par - 2) return { emoji: '🦅', title: `Eagle : ${par - score} coups de moins que le par` }
+  if (score === par - 1) return { emoji: '🐦', title: 'Birdie : 1 coup de moins que le par' }
   return null
+}
+
+// "8h34", in the viewer's local time.
+function finishTime(finishedAt: string): string {
+  return format(new Date(finishedAt), "H'h'mm")
+}
+
+function firstTitle(finishedAt: string | null): string {
+  return finishedAt ? `Premier du jour : ${finishTime(finishedAt)}` : 'Premier du jour'
+}
+
+function fastTitle(durationSecs: number | null): string {
+  return durationSecs != null ? `Trouvé en moins d'une minute : ${durationSecs}s` : "Trouvé en moins d'une minute"
 }
 
 // Monthly wins as stars, every five of them collapsed into a shooting star:
@@ -222,6 +237,14 @@ function lateBadge(daysLate: number): { emoji: string; title: string } | null {
 // score relative to a given par — used to render the reference table in the info modal.
 function basePoints(par: number, score: number): number {
   return 3 + (par - score) / (score > par ? 2 : 1)
+}
+
+// Splits items into as few rows of at most `maxPerRow` as possible, as evenly as possible:
+// 15 items at most 6 per row → 5 + 5 + 5 rather than 6 + 6 + 3.
+function balancedRows<T>(items: readonly T[], maxPerRow: number): T[][] {
+  const rowCount = Math.ceil(items.length / maxPerRow)
+  const perRow = Math.ceil(items.length / rowCount)
+  return Array.from({ length: rowCount }, (_, i) => items.slice(i * perRow, (i + 1) * perRow))
 }
 
 function possibleLabel(count: number): string {
@@ -253,22 +276,25 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
                   return next
                 })
               }
-              disabled={!p.revealed}
-              title={p.revealed ? 'Voir le détail' : undefined}
+              disabled={!p.finished}
+              title={p.finished ? 'Voir le détail' : undefined}
             >
               <span>
                 {i + 1}. {displayName(p.first_name, p.last_initial)}
-                {p.first_to_finish && <span title="Premier à finir"> 🥇</span>}
-                {p.fast && <span title="Trouvé en moins d'une minute"> ⚡</span>}
-                {late && <span title={late.title}> {late.emoji}</span>}
-                {p.score === 1 ? (
-                  <span title="Headshot"> 🎯</span>
-                ) : (
-                  golf && <span title={golf.title}> {golf.emoji}</span>
-                )}
+                {p.reaction && <span title="Sa réaction"> {p.reaction}</span>}
               </span>
               {p.finished ? (
                 <span className="flex items-center gap-2">
+                  <span>
+                    {p.first_to_finish && <span title={firstTitle(p.finished_at)}>🥇</span>}
+                    {p.fast && <span title={fastTitle(p.duration_secs)}>⚡</span>}
+                    {late && <span title={late.title}>{late.emoji}</span>}
+                    {p.score === 1 ? (
+                      <span title="Headshot : trouvé du premier coup">🎯</span>
+                    ) : (
+                      golf && <span title={golf.title}>{golf.emoji}</span>
+                    )}
+                  </span>
                   <span className="badge badge-sm">{scoreLabel(p.score)}</span>
                   {p.points != null && (
                     <span className="text-xs text-base-content/60">{p.points.toFixed(2)} points</span>
@@ -278,38 +304,65 @@ function ScoreboardPanel({ scoreboard, par }: { scoreboard: Scoreboard | null; p
                 <span className="text-xs text-base-content/40">En cours…</span>
               )}
             </button>
-            {expanded.has(p.user_id) && p.sequence && (
+            {expanded.has(p.user_id) && p.finished && (
               <div className="px-3 py-2 flex items-start justify-between gap-3">
-                {/* Two columns so every count lines up right against its row, whatever its width. */}
-                <div className="grid grid-cols-[auto_auto] items-center gap-x-1 gap-y-0.5">
-                  {p.sequence.map((row, rowIdx) => {
-                    const possible = p.possible_counts?.[rowIdx]
-                    return (
-                      <Fragment key={rowIdx}>
-                        <span className="text-[11px] text-base-content/50 tabular-nums text-right whitespace-nowrap">
-                          {possible != null && `${possibleLabel(possible)} ►`}
-                        </span>
-                        <div className="flex gap-0.5">
-                          {row.map((status, j) => (
-                            <div key={j} className={`w-4 h-4 rounded-sm ${miniCellClass(status)}`} />
-                          ))}
-                        </div>
-                      </Fragment>
-                    )
-                  })}
-                </div>
-                {par != null && p.score != null && p.points != null && (
-                  <ul className="text-[11px] text-base-content/50 leading-tight pl-3">
+                {p.sequence ? (
+                  /* Two columns so every count lines up right against its row, whatever its width. */
+                  <div className="grid grid-cols-[auto_auto] items-center gap-x-1 gap-y-0.5">
+                    {p.sequence.map((row, rowIdx) => {
+                      const possible = p.possible_counts?.[rowIdx]
+                      return (
+                        <Fragment key={rowIdx}>
+                          <span className="text-[11px] text-base-content/50 tabular-nums text-right whitespace-nowrap">
+                            {possible != null && `${possibleLabel(possible)} ►`}
+                          </span>
+                          <div className="flex gap-0.5">
+                            {row.map((status, j) => (
+                              <div key={j} className={`w-4 h-4 rounded-sm ${miniCellClass(status)}`} />
+                            ))}
+                          </div>
+                        </Fragment>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-base-content/40 italic">
+                    Grille visible une fois votre partie terminée
+                  </p>
+                )}
+                {/* Spells out every badge of the row, since their titles never show on touch screens. */}
+                <ul className="text-[11px] text-base-content/50 leading-tight pl-3">
+                  {par != null && p.score != null && p.points != null && (
                     <li>
                       Score {p.score} vs par {par} = {basePoints(par, p.score).toFixed(1)} points
                     </li>
-                    {p.first_to_finish && <li>Premier à finir : +0,5 point</li>}
-                    {p.fast && <li>Moins d'une minute : +0,5 point</li>}
-                    {p.days_late === 1 && <li>Le lendemain : × 75 %</li>}
-                    {p.days_late > 1 && <li>En retard : × 50 %</li>}
+                  )}
+                  {p.score === 1 ? (
+                    <li>🎯 Headshot : trouvé du premier coup</li>
+                  ) : (
+                    golf && (
+                      <li>
+                        {golf.emoji} {golf.title}
+                      </li>
+                    )
+                  )}
+                  {p.first_to_finish && (
+                    <li>🥇 Premier du jour{p.finished_at && ` (${finishTime(p.finished_at)})`} : +0,5 point</li>
+                  )}
+                  {p.fast && (
+                    <li>
+                      ⚡ Trouvé en {p.duration_secs != null ? `${p.duration_secs}s` : "moins d'une minute"} : +0,5 point
+                    </li>
+                  )}
+                  {late && (
+                    <li>
+                      {late.emoji} {late.title}
+                    </li>
+                  )}
+                  {p.points != null && (
                     <li className="font-medium text-base-content/70">Total : {p.points.toFixed(2)} points</li>
-                  </ul>
-                )}
+                  )}
+                </ul>
               </div>
             )}
           </li>
@@ -652,6 +705,22 @@ export function Sutom() {
       .catch(() => notify('Impossible de copier le résumé.', 'error'))
   }, [day, score, guesses, notify])
 
+  const [reactionPickerOpen, setReactionPickerOpen] = useState(false)
+  useEffect(() => setReactionPickerOpen(false), [viewedDate])
+
+  // Picking the current reaction again removes it.
+  const pickReaction = useCallback(
+    (reaction: string, current: string | null) => {
+      if (!day) return
+      const next = reaction === current ? null : reaction
+      setReactionPickerOpen(false)
+      setReaction(day.date, next)
+        .then(() => refreshScoreboard(day.date))
+        .catch(() => notify("Impossible d'enregistrer la réaction.", 'error'))
+    },
+    [day, refreshScoreboard, notify],
+  )
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!day || gameOver || submitting) return
@@ -703,7 +772,9 @@ export function Sutom() {
   const keyStatuses = keyboardStatuses(day.word, isRevealingLastRow ? guesses.slice(0, -1) : guesses)
 
   const currentUserId = getTokenPayload()?.sub
-  const isFirstToFinish = scoreboard?.players.some((p) => p.user_id === currentUserId && p.first_to_finish) ?? false
+  const me = scoreboard?.players.find((p) => p.user_id === currentUserId)
+  const isFirstToFinish = me?.first_to_finish ?? false
+  const myReaction = me?.reaction ?? null
   const winMessage =
     score !== null && score <= MAX_ATTEMPTS
       ? `🎉 Bravo, vous avez trouvé le mot en ${score} coup${score === 1 ? '' : 's'} ! 🎉`
@@ -853,9 +924,45 @@ export function Sutom() {
               {solved && isFirstToFinish && (
                 <span className="text-center font-semibold">🥇 Et vous êtes le premier ce jour ! 🥇</span>
               )}
-              <button className="btn btn-sm btn-outline" onClick={copySummary}>
-                Copier le résumé
-              </button>
+              <div className="flex flex-wrap gap-2 justify-center">
+                <button className="btn btn-sm btn-outline" onClick={copySummary}>
+                  Copier le résumé
+                </button>
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={() => setReactionPickerOpen((open) => !open)}
+                  disabled={!me}
+                  aria-expanded={reactionPickerOpen}
+                >
+                  {myReaction ? `Ma réaction : ${myReaction}` : 'Ajouter une réaction'}
+                </button>
+              </div>
+              {reactionPickerOpen && (
+                <>
+                  {/* As few rows as fit, evened out: 3 × 5 on phones, 8 + 7 on wider screens. */}
+                  {[
+                    { maxPerRow: 5, className: 'flex sm:hidden' },
+                    { maxPerRow: 8, className: 'hidden sm:flex' },
+                  ].map(({ maxPerRow, className }) => (
+                    <div key={maxPerRow} className={`${className} flex-col items-center gap-1`}>
+                      {balancedRows(REACTIONS, maxPerRow).map((row, i) => (
+                        <div key={i} className="flex gap-1">
+                          {row.map((r) => (
+                            <button
+                              key={r}
+                              className={`btn btn-square text-2xl ${r === myReaction ? 'btn-active' : 'btn-ghost'}`}
+                              onClick={() => pickReaction(r, myReaction)}
+                              title={r === myReaction ? 'Retirer ma réaction' : undefined}
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           )}
 

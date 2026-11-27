@@ -26,10 +26,17 @@ pub struct ScoreboardPlayer {
     pub sequence: Option<Vec<Vec<domain::LetterStatus>>>,
     /// How many dictionary words were still possible when each guess was made, alongside `sequence`.
     pub possible_counts: Option<Vec<i32>>,
+    /// The emote the player reacted to their finished game with, if any.
+    pub reaction: Option<String>,
     /// True for whoever finished this day's puzzle earliest, win or lose.
     pub first_to_finish: bool,
     /// True if the word was found less than a minute after the first guess.
     pub fast: bool,
+    /// When the player finished the game, while `None` in progress.
+    pub finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Seconds from the first guess to the end of the game, once finished. `None` for
+    /// games started before first guesses were timed.
+    pub duration_secs: Option<i64>,
     /// How many days after the puzzle's own day it was finished (0 = on the day, and always
     /// 0 while still in progress). Lets the UI explain a player's point total precisely.
     pub days_late: i32,
@@ -127,8 +134,11 @@ pub async fn get_scoreboard(
                 score: a.score,
                 sequence,
                 possible_counts,
+                reaction: a.reaction,
                 first_to_finish: is_first,
                 fast,
+                finished_at: finished.then_some(a.updated_at),
+                duration_secs: a.started_at.filter(|_| finished).map(|start| (a.updated_at - start).num_seconds()),
                 days_late,
                 points,
             }

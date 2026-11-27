@@ -25,8 +25,11 @@ const ScoreboardPlayerSchema = z.object({
   score: z.number().nullable(),
   sequence: z.array(z.array(LetterStatusSchema)).nullable(),
   possible_counts: z.array(z.number()).nullable(),
+  reaction: z.string().nullable(),
   first_to_finish: z.boolean(),
   fast: z.boolean(),
+  finished_at: z.string().nullable(),
+  duration_secs: z.number().nullable(),
   days_late: z.number(),
   points: z.number().nullable(),
 })
@@ -85,6 +88,36 @@ export async function submitGuesses(date: string, guesses: string[]): Promise<{ 
     await apiFetch(`/api/sutom/day/${date}/attempt`, {
       method: 'PUT',
       body: JSON.stringify({ guesses }),
+    }),
+  )
+}
+
+// Mirrors the backend's REACTIONS: the emotes a player can react to their finished game with.
+export const REACTIONS = [
+  '🥳',
+  '😎',
+  '😃',
+  '🤣',
+  '😛',
+  '🙄',
+  '😮',
+  '🥱',
+  '🥵',
+  '🤯',
+  '🥴',
+  '😥',
+  '😡',
+  '🤫',
+  '😬',
+] as const
+
+const SetReactionResultSchema = z.object({ reaction: z.string().nullable() })
+
+export async function setReaction(date: string, reaction: string | null): Promise<{ reaction: string | null }> {
+  return SetReactionResultSchema.parse(
+    await apiFetch(`/api/sutom/day/${date}/reaction`, {
+      method: 'PUT',
+      body: JSON.stringify({ reaction }),
     }),
   )
 }

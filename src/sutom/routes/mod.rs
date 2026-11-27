@@ -2,6 +2,7 @@ pub mod attempt;
 pub mod day;
 pub mod history;
 pub mod leaderboard;
+pub mod reaction;
 pub mod scoreboard;
 
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -13,6 +14,7 @@ pub fn router() -> OpenApiRouter<State> {
         .routes(routes!(day::get_today))
         .routes(routes!(day::get_day))
         .routes(routes!(attempt::submit_guesses))
+        .routes(routes!(reaction::set_reaction))
         .routes(routes!(scoreboard::get_scoreboard))
         .routes(routes!(leaderboard::get_leaderboard))
         .routes(routes!(history::get_history))

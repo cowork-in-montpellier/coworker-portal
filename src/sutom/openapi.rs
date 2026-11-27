@@ -7,6 +7,8 @@ use utoipa::OpenApi;
         crate::sutom::routes::day::DayResponse,
         crate::sutom::routes::attempt::SubmitGuessesRequest,
         crate::sutom::routes::attempt::SubmitGuessesResponse,
+        crate::sutom::routes::reaction::SetReactionRequest,
+        crate::sutom::routes::reaction::SetReactionResponse,
         crate::sutom::routes::scoreboard::ScoreboardPlayer,
         crate::sutom::routes::scoreboard::ScoreboardResponse,
         crate::sutom::routes::leaderboard::LeaderboardEntry,
