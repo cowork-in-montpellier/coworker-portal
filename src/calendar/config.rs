@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 
 #[derive(Clone)]
 pub struct Config {
+    pub database_url: String,
     pub google_calendar_ical_url: Option<String>,
     pub google_calendar_sync_cron: String,
     pub google_calendar_room_id: i32,
@@ -14,6 +15,8 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Result<Self> {
         Ok(Self {
+            // The calendar's own SQLite file, created on first start.
+            database_url: std::env::var("CALENDAR_DATABASE_URL").unwrap_or_else(|_| "sqlite:data/calendar.db".into()),
             google_calendar_ical_url: std::env::var("GOOGLE_CALENDAR_ICAL_URL").ok(),
             google_calendar_sync_cron: std::env::var("GOOGLE_CALENDAR_SYNC_CRON")
                 .unwrap_or_else(|_| "0 */15 * * * *".into()),

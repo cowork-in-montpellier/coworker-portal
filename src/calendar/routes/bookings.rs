@@ -59,7 +59,7 @@ pub async fn list_bookings(
 ) -> ApiResult<Json<Vec<BookingResponse>>> {
     let bookings = sqlx::query_as::<_, BookingResponse>(
         "SELECT id, room_id, title, start_at, end_at, created_by, notes, created_at \
-         FROM portal_room_booking \
+         FROM booking \
          WHERE start_at < $2 AND end_at > $1 \
          ORDER BY start_at",
     )
@@ -94,7 +94,7 @@ pub async fn create_booking(
     }
 
     let room_name: Option<String> = sqlx::query_scalar(
-        "SELECT name FROM portal_room WHERE id = $1",
+        "SELECT name FROM room WHERE id = $1",
     )
     .bind(body.room_id)
     .fetch_optional(&state.db)
@@ -104,7 +104,7 @@ pub async fn create_booking(
     let room_name = room_name.ok_or((StatusCode::BAD_REQUEST, Json(json!({"error": "Salle introuvable"}))))?;
 
     let conflict: Option<i32> = sqlx::query_scalar(
-        "SELECT id FROM portal_room_booking \
+        "SELECT id FROM booking \
          WHERE room_id = $1 AND start_at < $3 AND end_at > $2 \
          LIMIT 1",
     )
@@ -139,8 +139,8 @@ pub async fn create_booking(
     }
 
     let booking = sqlx::query_as::<_, BookingResponse>(
-        "INSERT INTO portal_room_booking (room_id, title, start_at, end_at, created_by, notes, google_uid) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) \
+        "INSERT INTO booking (room_id, title, start_at, end_at, created_by, notes, google_uid, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
          RETURNING id, room_id, title, start_at, end_at, created_by, notes, created_at",
     )
     .bind(body.room_id)
@@ -150,6 +150,7 @@ pub async fn create_booking(
     .bind(user_id)
     .bind(body.notes.as_deref().unwrap_or(""))
     .bind(&google_uid)
+    .bind(Utc::now())
     .fetch_one(&state.db)
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": "Erreur serveur"}))))?;
@@ -181,7 +182,7 @@ pub async fn delete_booking(
     Path(id): Path<i32>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let deleted = sqlx::query_as::<_, DeletedBooking>(
-        "DELETE FROM portal_room_booking WHERE id = $1 RETURNING id, google_uid",
+        "DELETE FROM booking WHERE id = $1 RETURNING id, google_uid",
     )
     .bind(id)
     .fetch_optional(&state.db)
@@ -204,4 +205,95 @@ pub async fn delete_booking(
     }
 
     Ok(Json(json!({})))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use chrono::TimeZone;
+
+    use super::*;
+    use crate::calendar::{config::Config, db};
+    use crate::users::JwtService;
+
+    async fn state() -> CalendarState {
+        let db = db::in_memory().await;
+        sqlx::query("INSERT INTO room (id, name) VALUES (1, 'Titanic')").execute(&db).await.unwrap();
+        CalendarState {
+            db,
+            jwt: Arc::new(JwtService::new("secret", 1, 1, 1)),
+            config: Arc::new(Config {
+                database_url: String::new(),
+                google_calendar_ical_url: None,
+                google_calendar_sync_cron: String::new(),
+                google_calendar_room_id: 1,
+                google_caldav_enabled: false,
+                google_caldav_email: None,
+                google_caldav_password: None,
+                google_caldav_calendar_id: None,
+            }),
+        }
+    }
+
+    fn at(hour: u32, min: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 12, 1, hour, min, 0).unwrap()
+    }
+
+    async fn book(state: &CalendarState, start: DateTime<Utc>, end: DateTime<Utc>) -> ApiResult<i32> {
+        let request = CreateBookingRequest { room_id: 1, title: "Réunion".into(), start_at: start, end_at: end, notes: None };
+        let user = CurrentUser { id: 7, first_name: "Alice".into() };
+        create_booking(State(state.clone()), user, Json(request)).await.map(|(_, Json(b))| b.id)
+    }
+
+    async fn delete(state: &CalendarState, id: i32) {
+        let user = CurrentUser { id: 7, first_name: "Alice".into() };
+        let _ = delete_booking(State(state.clone()), user, Path(id)).await.unwrap();
+    }
+
+    async fn listed(state: &CalendarState, start: DateTime<Utc>, end: DateTime<Utc>) -> Vec<i32> {
+        let Json(bookings) = list_bookings(State(state.clone()), Query(ListBookingsQuery { start, end })).await.unwrap();
+        bookings.into_iter().map(|b| b.id).collect()
+    }
+
+    #[tokio::test]
+    async fn bookings_are_created_listed_by_range_and_deleted() {
+        let state = state().await;
+        let morning = book(&state, at(9, 0), at(10, 0)).await.unwrap();
+        // Back to back with the first one: no overlap.
+        let late_morning = book(&state, at(10, 0), at(11, 30)).await.unwrap();
+
+        assert_eq!(listed(&state, at(8, 0), at(12, 0)).await, vec![morning, late_morning]);
+        assert_eq!(listed(&state, at(10, 0), at(10, 30)).await, vec![late_morning]);
+        assert!(listed(&state, at(11, 30), at(12, 0)).await.is_empty());
+
+        delete(&state, morning).await;
+        assert_eq!(listed(&state, at(8, 0), at(12, 0)).await, vec![late_morning]);
+    }
+
+    #[tokio::test]
+    async fn overlapping_bookings_are_refused() {
+        let state = state().await;
+        book(&state, at(9, 0), at(10, 0)).await.unwrap();
+        // Overlaps by a few milliseconds only.
+        let err = book(&state, at(9, 59) + chrono::Duration::milliseconds(59_999), at(11, 0)).await.unwrap_err();
+        assert_eq!(err.0, StatusCode::CONFLICT);
+        assert_eq!(book(&state, at(10, 0), at(9, 0)).await.unwrap_err().0, StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn ids_are_never_reused() {
+        let state = state().await;
+        // As left by the copy from PostgreSQL: explicit ids.
+        sqlx::query("INSERT INTO booking (id, room_id, title, start_at, end_at, created_at) VALUES (41, 1, 'x', $1, $2, $1)")
+            .bind(at(8, 0))
+            .bind(at(8, 30))
+            .execute(&state.db)
+            .await
+            .unwrap();
+        let next = book(&state, at(9, 0), at(10, 0)).await.unwrap();
+        assert_eq!(next, 42);
+        delete(&state, next).await;
+        assert_eq!(book(&state, at(9, 0), at(10, 0)).await.unwrap(), 43);
+    }
 }

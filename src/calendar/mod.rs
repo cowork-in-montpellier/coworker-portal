@@ -1,5 +1,7 @@
 pub mod caldav;
 pub mod config;
+pub mod db;
+pub mod legacy_import;
 pub mod openapi;
 pub mod routes;
 pub mod state;
