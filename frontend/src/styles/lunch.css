@@ -1,67 +1,7 @@
 /* Pause-déj: the Cowork'in design system (Museo titles, one blue accent, 2px borders,
    pill actions, no shadows to separate) inside the portal's daisyUI themes. */
 
-@font-face {
-  font-family: 'Museo';
-  src: url('/fonts/Museo500-Regular.otf') format('opentype');
-  font-weight: 500;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'Museo';
-  src: url('/fonts/Museo700-Regular.otf') format('opentype');
-  font-weight: 700;
-  font-display: swap;
-}
-
-.lunch {
-  /* Brand blue, decorative fills only (rule under the title). */
-  --cw-primary: #35a8e0;
-  /* Blue for text, icons and filled buttons: 5.64:1 on white. */
-  --cw-blue: #176e98;
-  --cw-blue-hover: #125a7c;
-  --cw-on-blue: #ffffff;
-  /* Light tint behind the selected chips and the "I'm going" card. */
-  --cw-blue-soft: #e6f4fb;
-  --cw-display: Museo, 'Playfair Display', serif;
-}
-
-/* Dark portal theme: lighter blue for text, darker fills, so both keep AA contrast. */
-[data-theme='dim'] .lunch {
-  --cw-blue: #8dceee;
-  --cw-blue-hover: #b5e0f5;
-  --cw-on-blue: #0f2a38;
-  --cw-blue-soft: rgba(53, 168, 224, 0.16);
-}
-
-.lunch-title {
-  font-family: var(--cw-display);
-  font-weight: 700;
-  font-size: 30px;
-  line-height: 1;
-}
-
-@media (min-width: 768px) {
-  .lunch-title {
-    font-size: 36px;
-  }
-}
-
-/* The 96 × 8 px blue rule under every section title. */
-.lunch-rule {
-  width: 96px;
-  height: 8px;
-  background: var(--cw-primary);
-  border-radius: 0;
-}
-
-.lunch-subtitle {
-  font-family: var(--cw-display);
-  font-weight: 700;
-  font-size: 20px;
-  line-height: 28px;
-}
+/* Design tokens, fonts and the page title live in cowork.css. */
 
 .lunch-card {
   background: var(--color-base-100);
@@ -310,18 +250,4 @@
 .lunch-goer.is-me {
   background: var(--cw-blue);
   color: var(--cw-on-blue);
-}
-
-/* Keyboard focus: 2px of the background, then 2px of blue, following the rounding. */
-.lunch :where(button, a, input, select, summary):focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 2px var(--color-base-100),
-    0 0 0 4px var(--cw-blue);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lunch * {
-    transition: none !important;
-  }
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 import {
   type PendingOrderItem,
   listPendingOrders,
@@ -47,7 +48,7 @@ function OrderCard({ order }: OrderCardProps) {
 
   if (state === 'done' && guestToken) {
     return (
-      <div className="card bg-success/10 border border-success/30 shadow-sm">
+      <div className="card bg-success/10 border-2 border-success/30">
         <div className="card-body p-4 gap-2">
           <div className="flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-success h-5 w-5 shrink-0">
@@ -68,7 +69,7 @@ function OrderCard({ order }: OrderCardProps) {
   }
 
   return (
-    <div className="card bg-base-100 shadow-sm border border-base-200">
+    <div className="card cw-card">
       <div className="card-body p-4 gap-3">
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
@@ -139,33 +140,26 @@ export function GuestCashier() {
       <Navbar />
 
       <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
-        <div className="flex items-center justify-between mb-6 gap-4">
-          <div>
-            <h2 className="text-xl font-bold">Paiements sur place en attente</h2>
-            {lastUpdated && (
-              <p className="text-xs text-base-content/40 mt-0.5">
-                Mis à jour à {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            disabled={refreshing}
-            onClick={() => fetchOrders()}
-          >
-            {refreshing
-              ? <span className="loading loading-spinner loading-xs" />
-              : '↻ Actualiser'}
-          </button>
-        </div>
+        <PageHeader
+          title="Paiements sur place en attente"
+          lede={
+            lastUpdated &&
+            `Mis à jour à ${lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`
+          }
+          actions={
+            <button type="button" className="btn btn-sm btn-ghost" disabled={refreshing} onClick={() => fetchOrders()}>
+              {refreshing ? <span className="loading loading-spinner loading-xs" /> : '↻ Actualiser'}
+            </button>
+          }
+          className="mb-8"
+        />
 
         {loading ? (
           <div className="flex justify-center py-12">
             <span className="loading loading-spinner loading-lg" />
           </div>
         ) : orders.length === 0 ? (
-          <div className="card bg-base-100 shadow-sm">
+          <div className="card cw-card">
             <div className="card-body p-8 items-center text-center gap-2">
               <p className="text-base-content/40 text-sm">Aucune commande en attente</p>
               <p className="text-base-content/30 text-xs">Les nouvelles commandes apparaissent ici automatiquement.</p>

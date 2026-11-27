@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { type Service, type VoucherSpec } from '../api/services'
 import { listGuestServices } from '../api/guest'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 
 function voucherSpecLabel(spec: VoucherSpec): string {
   if (spec.kind === 'Monthly') return `1 voucher — valable 30 jours`
@@ -38,7 +39,7 @@ function ServiceCard({
             }`}>
               {selected && '✓'}
             </span>
-            <h3 className="font-semibold text-base truncate">{service.name}</h3>
+            <h3 className="cw-subtitle cw-blue truncate">{service.name}</h3>
           </div>
           <span className="text-lg font-bold text-primary whitespace-nowrap shrink-0">
             {service.price.toFixed(2)} €
@@ -137,12 +138,11 @@ export function GuestBuy() {
       <Navbar />
 
       <main className="flex-1 p-4 md:p-8 max-w-4xl mx-auto w-full">
-        <div className="mb-6">
-          <h2 className="text-xl font-bold">Acheter un accès</h2>
-          <p className="text-sm text-base-content/50 mt-1">
-            Aucun compte nécessaire — vos vouchers seront affichés immédiatement après l'achat.
-          </p>
-        </div>
+        <PageHeader
+          title="Acheter un accès"
+          lede="Aucun compte nécessaire : vos vouchers s'affichent juste après l'achat."
+          className="mb-8"
+        />
 
         {error && (
           <div role="alert" className="alert alert-error mb-4"><span>{error}</span></div>
@@ -180,7 +180,7 @@ export function GuestBuy() {
               )}
             </div>
 
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card cw-card">
               <div className="card-body p-4 gap-3">
                 <h3 className="font-semibold text-sm text-base-content/60 uppercase tracking-wide">
                   Contact & facturation
@@ -221,7 +221,7 @@ export function GuestBuy() {
               </div>
             </div>
 
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card cw-card">
               <div className="card-body p-4 flex-row items-center justify-between">
                 <div>
                   <p className="text-sm text-base-content/50">Total TTC</p>

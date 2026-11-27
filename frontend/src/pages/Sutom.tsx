@@ -440,7 +440,7 @@ function PointsInfoModal() {
               ✕
             </button>
           </form>
-          <h3 className="font-bold text-lg pr-8">Comment les points sont calculés ?</h3>
+          <h3 className="cw-subtitle pr-8">Comment les points sont calculés ?</h3>
           <div className="py-4 text-sm flex flex-col gap-3">
             <p>
               Chaque jour, un <strong>par</strong> est calculé : la moyenne (arrondie au supérieur) des scores de tous
@@ -880,7 +880,7 @@ export function Sutom() {
               </button>
             </div>
             <div className="flex-1 text-center">
-              <h2 className="text-xl font-bold">SUTOM #{day.puzzle_number}</h2>
+              <h1 className="cw-title whitespace-nowrap text-2xl sm:text-3xl md:text-4xl">SUTOM #{day.puzzle_number}</h1>
               <div className="text-sm text-base-content/60">
                 {capitalize(format(parseDateKey(day.date), 'EEEE d MMMM yyyy', { locale: fr }))}
               </div>
@@ -1024,7 +1024,7 @@ export function Sutom() {
         <hr className="border-base-300" />
 
         <div className="flex flex-col gap-6">
-          <div className="card bg-base-100 shadow-sm">
+          <div className="card cw-card">
             <div className="card-body p-4">
               <h3 className="font-semibold text-sm mb-2">
                 Classement du jour
@@ -1042,7 +1042,7 @@ export function Sutom() {
               <ScoreboardPanel scoreboard={scoreboard} par={day.par} />
             </div>
           </div>
-          <div className="card bg-base-100 shadow-sm">
+          <div className="card cw-card">
             <div className="card-body p-4">
               <div className="flex items-center justify-between mb-2 gap-2">
                 <h3 className="font-semibold text-sm flex items-center gap-1">

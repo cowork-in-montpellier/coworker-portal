@@ -56,11 +56,11 @@ export function AcceptInvite() {
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
       <div className="flex-1 flex items-center justify-center p-4">
-        <div className="card bg-base-100 shadow-md w-full max-w-md">
+        <div className="card cw-card w-full max-w-md">
           <div className="card-body gap-4">
             {created ? (
               <div className="flex flex-col gap-4">
-                <h2 className="card-title text-base">Compte créé !</h2>
+                <h2 className="card-title cw-subtitle">Compte créé !</h2>
                 <p className="text-sm text-base-content/70">
                   Votre compte a bien été créé. Vous pouvez maintenant vous connecter.
                 </p>
@@ -85,7 +85,7 @@ export function AcceptInvite() {
               </div>
             ) : (
               <>
-                <h2 className="card-title text-base">Créer votre compte</h2>
+                <h2 className="card-title cw-subtitle">Créer votre compte</h2>
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="form-control">

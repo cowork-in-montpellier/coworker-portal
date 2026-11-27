@@ -4,6 +4,7 @@ import { createBill } from '../api/bills'
 import { ApiError } from '../api/client'
 import { type Service, type VoucherSpec, listServices } from '../api/services'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 
 function voucherSpecLabel(spec: VoucherSpec): string {
   if (spec.kind === 'Monthly') return `1 voucher — valable 30 jours`
@@ -39,7 +40,7 @@ function ServiceCard({
             }`}>
               {selected && '✓'}
             </span>
-            <h3 className="font-semibold text-base truncate">{service.name}</h3>
+            <h3 className="cw-subtitle cw-blue truncate">{service.name}</h3>
           </div>
           <span className="text-lg font-bold text-primary whitespace-nowrap shrink-0">
             {service.price.toFixed(2)} €
@@ -143,13 +144,12 @@ export function CreateBill() {
       <Navbar />
 
       <main className="flex-1 p-4 md:p-8 max-w-4xl mx-auto w-full">
-        <div className="flex items-center gap-3 mb-6">
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate('/dashboard')}>←</button>
-          <div>
-            <h2 className="text-xl font-bold">Nouvelle facture</h2>
-            <p className="text-xs text-base-content/40 mt-0.5">Sélectionnez un ou plusieurs services</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Nouvelle facture"
+          lede="Sélectionnez un ou plusieurs services"
+          back={{ to: '/dashboard' }}
+          className="mb-8"
+        />
 
         {error && (
           <div role="alert" className="alert alert-error mb-4"><span>{error}</span></div>
@@ -200,7 +200,7 @@ export function CreateBill() {
               )}
             </div>
 
-            <div className="card bg-base-100 shadow-sm">
+            <div className="card cw-card">
               <div className="card-body p-4 flex-row items-center justify-between">
                 <div>
                   <p className="text-sm text-base-content/50">Total TTC</p>

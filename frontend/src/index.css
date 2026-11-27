@@ -2,3 +2,19 @@
 @plugin "daisyui" {
   themes: corporate --default, nord, dim;
 }
+
+/* The portal's two themes, with the Cowork'in blue as their primary color. */
+@plugin "daisyui/theme" {
+  name: "corporate";
+  default: true;
+  --color-primary: #176e98;
+  --color-primary-content: #ffffff;
+}
+
+@plugin "daisyui/theme" {
+  name: "dim";
+  --color-primary: #8dceee;
+  --color-primary-content: #0f2a38;
+}
+
+@import "./styles/cowork.css";

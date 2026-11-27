@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 import { getGuestOrder, getGuestOrderPaymentStatus, type GuestOrderData } from '../api/guest'
 import { ApiError } from '../api/client'
 
@@ -77,6 +78,8 @@ export function GuestProcessing() {
 
       <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full flex flex-col items-center justify-center gap-8 py-12">
 
+        <PageHeader title="Paiement" />
+
         {/* Spinner + status text */}
         <div className="flex flex-col items-center gap-3 text-center">
           <span className="loading loading-spinner loading-lg text-primary" />
@@ -85,7 +88,7 @@ export function GuestProcessing() {
 
         {/* On-site payment info box */}
         {order?.payment_method === 'on_site' && (
-          <div className="card bg-base-100 shadow-sm w-full max-w-md">
+          <div className="card cw-card w-full max-w-md">
             <div className="card-body p-6 gap-4 items-center text-center">
               <div className="flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-info h-5 w-5 shrink-0">

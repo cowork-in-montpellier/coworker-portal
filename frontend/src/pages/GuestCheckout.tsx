@@ -6,6 +6,7 @@ import { ApiError } from '../api/client'
 import { fetchOnsitePaymentPresence } from '../api/connected'
 import { useStatus } from '../hooks/useStatus'
 import { Navbar } from '../components/Navbar'
+import { PageHeader } from '../components/PageHeader'
 
 interface CheckoutState {
   lines: { service_id: number; quantity: number }[]
@@ -86,9 +87,7 @@ export function GuestCheckout() {
       <Navbar />
 
       <main className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full">
-        <div className="mb-6">
-          <h2 className="text-xl font-bold">Récapitulatif & paiement</h2>
-        </div>
+        <PageHeader title="Récapitulatif et paiement" className="mb-8" />
 
         {error && (
           <div role="alert" className="alert alert-error mb-4">
@@ -98,7 +97,7 @@ export function GuestCheckout() {
 
         <div className="grid md:grid-cols-2 gap-6">
           {/* Left column — order recap */}
-          <div className="card bg-base-100 shadow-sm">
+          <div className="card cw-card">
             <div className="card-body p-4 gap-4 flex flex-col h-full">
               <h3 className="font-semibold text-sm text-base-content/60 uppercase tracking-wide">
                 Votre commande
@@ -145,7 +144,7 @@ export function GuestCheckout() {
           </div>
 
           {/* Right column — payment options */}
-          <div className="card bg-base-100 shadow-sm">
+          <div className="card cw-card">
             <div className="card-body p-4 gap-4">
               <h3 className="font-semibold text-sm text-base-content/60 uppercase tracking-wide">
                 Mode de paiement

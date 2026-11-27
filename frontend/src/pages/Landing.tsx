@@ -71,20 +71,21 @@ export function Landing() {
       <div className="flex-1 flex flex-col items-center justify-center p-4 gap-8">
 
       {/* Brand */}
-      <div className="text-center">
-        <img src="/logo-default.png" alt="Cowork'in Montpellier" className="h-20 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold">Cowork'in Montpellier</h1>
-        <p className="text-base-content/50 text-sm mt-1">Bienvenue — comment souhaitez-vous continuer ?</p>
+      <div className="flex flex-col items-center gap-4 text-center">
+        <img src="/logo-default.png" alt="" className="h-20" />
+        <h1 className="cw-title">Cowork'in Montpellier</h1>
+        <div className="cw-rule" aria-hidden="true" />
+        <p className="font-bold text-base-content/75">Bienvenue ! Comment souhaitez-vous continuer ?</p>
       </div>
 
       {/* Two paths */}
       <div className="flex flex-col md:flex-row gap-4 w-full max-w-2xl items-stretch">
 
         {/* Member login */}
-        <div className="card bg-base-100 shadow-md flex-1">
+        <div className="card cw-card flex-1">
           <div className="card-body gap-4">
             <div>
-              <h2 className="card-title text-base">Espace membres</h2>
+              <h2 className="card-title cw-subtitle">Espace membres</h2>
               <p className="text-sm text-base-content/50">Connectez-vous avec votre compte coworking.</p>
             </div>
 
@@ -173,10 +174,10 @@ export function Landing() {
         </div>
 
         {/* Guest buy */}
-        <div className="card bg-base-100 shadow-md flex-1">
+        <div className="card cw-card flex-1">
           <div className="card-body justify-between gap-6">
             <div>
-              <h2 className="card-title text-base">Accès visiteur</h2>
+              <h2 className="card-title cw-subtitle">Accès visiteur</h2>
               <p className="text-sm text-base-content/50">
                 Achetez un accès sans créer de compte. Vos vouchers sont disponibles immédiatement après l'achat.
               </p>
