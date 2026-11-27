@@ -948,11 +948,10 @@ Primary key: `(month, user_id)`.
 #### Move from PostgreSQL
 
 SUTOM data used to live in the shared PostgreSQL database (`portal_sutom_word`,
-`portal_sutom_attempt`, `portal_sutom_month_ranking`, migrations `0016`–`0022`). At startup,
-`sutom::legacy_import` copies them once into the SQLite database while it is still empty,
-in a single transaction. The old tables and migrations are kept for now (sqlx refuses to
-start if an applied migration file disappears); once every environment has moved, a
-PostgreSQL migration can drop the tables and `legacy_import` can go.
+`portal_sutom_attempt`, `portal_sutom_month_ranking`, migrations `0016`–`0022`). It was
+copied once into the SQLite database at startup, then the PostgreSQL tables were dropped by
+migration `0023`. The old migration files stay: sqlx refuses to start if an applied
+migration file disappears.
 
 ### Edges
 

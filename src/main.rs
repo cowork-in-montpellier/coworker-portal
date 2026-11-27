@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use axum::{Json, response::Html, routing::get};
 use axum_swagger_ui::swagger_ui;
 use sqlx::postgres::PgPoolOptions;
@@ -110,7 +110,6 @@ async fn main() -> Result<()> {
     };
 
     let sutom_db = sutom::db::connect(&sutom_config.database_url).await?;
-    sutom::legacy_import::run(&db, &sutom_db).await.context("copying SUTOM data from PostgreSQL")?;
 
     let sutom_state = sutom::State {
         db: sutom_db,

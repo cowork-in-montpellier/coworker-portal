@@ -2,7 +2,6 @@ pub mod config;
 pub mod db;
 pub mod dictionary;
 pub mod domain;
-pub mod legacy_import;
 pub mod openapi;
 pub mod ports;
 pub mod repository;
