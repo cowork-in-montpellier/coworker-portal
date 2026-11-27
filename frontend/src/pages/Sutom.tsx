@@ -239,6 +239,14 @@ function basePoints(par: number, score: number): number {
   return 3 + (par - score) / (score > par ? 2 : 1)
 }
 
+// Splits items into as few rows of at most `maxPerRow` as possible, as evenly as possible:
+// 15 items at most 6 per row → 5 + 5 + 5 rather than 6 + 6 + 3.
+function balancedRows<T>(items: readonly T[], maxPerRow: number): T[][] {
+  const rowCount = Math.ceil(items.length / maxPerRow)
+  const perRow = Math.ceil(items.length / rowCount)
+  return Array.from({ length: rowCount }, (_, i) => items.slice(i * perRow, (i + 1) * perRow))
+}
+
 function possibleLabel(count: number): string {
   return `${count.toLocaleString('fr-FR')} mot${count > 1 ? 's' : ''} possible${count > 1 ? 's' : ''}`
 }
@@ -930,18 +938,30 @@ export function Sutom() {
                 </button>
               </div>
               {reactionPickerOpen && (
-                <div className="flex flex-wrap gap-1 justify-center">
-                  {REACTIONS.map((r) => (
-                    <button
-                      key={r}
-                      className={`btn btn-sm btn-square text-lg ${r === myReaction ? 'btn-active' : 'btn-ghost'}`}
-                      onClick={() => pickReaction(r, myReaction)}
-                      title={r === myReaction ? 'Retirer ma réaction' : undefined}
-                    >
-                      {r}
-                    </button>
+                <>
+                  {/* As few rows as fit, evened out: 3 × 5 on phones, 8 + 7 on wider screens. */}
+                  {[
+                    { maxPerRow: 5, className: 'flex sm:hidden' },
+                    { maxPerRow: 8, className: 'hidden sm:flex' },
+                  ].map(({ maxPerRow, className }) => (
+                    <div key={maxPerRow} className={`${className} flex-col items-center gap-1`}>
+                      {balancedRows(REACTIONS, maxPerRow).map((row, i) => (
+                        <div key={i} className="flex gap-1">
+                          {row.map((r) => (
+                            <button
+                              key={r}
+                              className={`btn btn-square text-2xl ${r === myReaction ? 'btn-active' : 'btn-ghost'}`}
+                              onClick={() => pickReaction(r, myReaction)}
+                              title={r === myReaction ? 'Retirer ma réaction' : undefined}
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
                   ))}
-                </div>
+                </>
               )}
             </div>
           )}

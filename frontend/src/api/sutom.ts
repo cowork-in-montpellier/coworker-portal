@@ -93,7 +93,23 @@ export async function submitGuesses(date: string, guesses: string[]): Promise<{ 
 }
 
 // Mirrors the backend's REACTIONS: the emotes a player can react to their finished game with.
-export const REACTIONS = ['🥳', '😎', '😃', '🤣', '😛', '🙄', '😮', '🥱', '🥵', '🤯', '🥴', '😥', '😡'] as const
+export const REACTIONS = [
+  '🥳',
+  '😎',
+  '😃',
+  '🤣',
+  '😛',
+  '🙄',
+  '😮',
+  '🥱',
+  '🥵',
+  '🤯',
+  '🥴',
+  '😥',
+  '😡',
+  '🤫',
+  '😬',
+] as const
 
 const SetReactionResultSchema = z.object({ reaction: z.string().nullable() })
 
